@@ -90,20 +90,24 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({ id, title, onClose }
       });
     });
 
-    // Handle container resize
+    // Handle container resize with debounce to prevent IPC spam on zoom/drag
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const resizeObserver = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        try {
-          if (fitAddonRef.current && xtermRef.current) {
-            fitAddonRef.current.fit();
-            const newCols = xtermRef.current.cols;
-            const newRows = xtermRef.current.rows;
-            invoke("resize_pty", { id, cols: newCols, rows: newRows }).catch(() => {});
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        requestAnimationFrame(() => {
+          try {
+            if (fitAddonRef.current && xtermRef.current) {
+              fitAddonRef.current.fit();
+              const newCols = xtermRef.current.cols;
+              const newRows = xtermRef.current.rows;
+              invoke("resize_pty", { id, cols: newCols, rows: newRows }).catch(() => {});
+            }
+          } catch (e) {
+            // ignore fit errors when container hidden
           }
-        } catch (e) {
-          // ignore fit errors when container hidden
-        }
-      });
+        });
+      }, 60);
     });
 
     if (containerRef.current) {
@@ -111,6 +115,7 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({ id, title, onClose }
     }
 
     return () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
       onDataDisposable.dispose();
       resizeObserver.disconnect();
       if (unlisten) unlisten();
