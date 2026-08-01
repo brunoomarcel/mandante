@@ -1,4 +1,4 @@
-import React, { useCallback, useImperativeHandle, forwardRef, useRef } from "react";
+import React, { useCallback, useImperativeHandle, forwardRef, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save, open, message } from "@tauri-apps/plugin-dialog";
 import {
@@ -57,6 +57,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
           title={shape.props.title}
           color={shape.props.color || "indigo"}
           bootCommand={shape.props.bootCommand}
+          themeMode={document.documentElement.classList.contains("light") ? "light" : "dark"}
           onClose={() => {
             editor.deleteShapes([shape.id]);
           }}
@@ -92,6 +93,12 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
 
 const customShapeUtils = [TerminalShapeUtil];
 
+export interface WorkspaceItem {
+  id: string;
+  name: string;
+  terminalCount: number;
+}
+
 export interface CanvasHandle {
   addTerminalNode: (title?: string, customX?: number, customY?: number) => void;
   loadPreset: (presetType: "fullstack" | "grid") => void;
@@ -99,14 +106,34 @@ export interface CanvasHandle {
   clearCanvas: () => void;
   exportWorkspace: () => void;
   importWorkspace: () => void;
+  getWorkspaces: () => WorkspaceItem[];
+  getActiveWorkspaceId: () => string;
+  switchWorkspace: (pageId: string) => void;
+  createWorkspace: (name?: string) => string | undefined;
+  deleteWorkspace: (pageId: string) => void;
 }
 
-export const Canvas = forwardRef<CanvasHandle, {}>((_, ref) => {
+export interface CanvasProps {
+  themeMode?: "dark" | "light";
+}
+
+export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark" }, ref) => {
   const editorRef = useRef<Editor | null>(null);
 
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
-  }, []);
+    editor.user.updateUserPreferences({
+      colorScheme: themeMode === "dark" ? "dark" : "light",
+    });
+  }, [themeMode]);
+
+  useEffect(() => {
+    if (editorRef.current) {
+      editorRef.current.user.updateUserPreferences({
+        colorScheme: themeMode === "dark" ? "dark" : "light",
+      });
+    }
+  }, [themeMode]);
 
   const addTerminalNode = useCallback(
     (title?: string, customX?: number, customY?: number) => {
@@ -391,6 +418,54 @@ export const Canvas = forwardRef<CanvasHandle, {}>((_, ref) => {
     });
   }, []);
 
+  const getWorkspaces = useCallback((): WorkspaceItem[] => {
+    if (!editorRef.current) return [];
+    const editor = editorRef.current;
+    const pages = editor.getPages();
+    return pages.map((page) => {
+      const pageShapeIds = editor.getPageShapeIds(page.id);
+      let terminalCount = 0;
+      pageShapeIds.forEach((id) => {
+        const shape = editor.getShape(id);
+        if (shape && shape.type === "terminal") {
+          terminalCount++;
+        }
+      });
+      return {
+        id: page.id,
+        name: page.name,
+        terminalCount,
+      };
+    });
+  }, []);
+
+  const getActiveWorkspaceId = useCallback((): string => {
+    if (!editorRef.current) return "";
+    return editorRef.current.getCurrentPageId();
+  }, []);
+
+  const switchWorkspace = useCallback((pageId: string) => {
+    if (!editorRef.current) return;
+    editorRef.current.setCurrentPage(pageId as any);
+  }, []);
+
+  const createWorkspace = useCallback((name?: string) => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    const count = editor.getPages().length + 1;
+    const pageId = createShapeId();
+    editor.createPage({ name: name || `Workspace ${count}` });
+    return pageId;
+  }, []);
+
+  const deleteWorkspace = useCallback((pageId: string) => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    if (editor.getPages().length > 1) {
+      editor.deletePage(pageId as any);
+    }
+  }, []);
+
   useImperativeHandle(ref, () => ({
     addTerminalNode,
     loadPreset,
@@ -398,6 +473,11 @@ export const Canvas = forwardRef<CanvasHandle, {}>((_, ref) => {
     clearCanvas,
     exportWorkspace,
     importWorkspace,
+    getWorkspaces,
+    getActiveWorkspaceId,
+    switchWorkspace,
+    createWorkspace,
+    deleteWorkspace,
   }));
 
   return (
@@ -405,7 +485,6 @@ export const Canvas = forwardRef<CanvasHandle, {}>((_, ref) => {
       <Tldraw
         shapeUtils={customShapeUtils}
         onMount={handleMount}
-        inferDarkMode
       />
     </div>
   );

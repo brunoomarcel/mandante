@@ -11,6 +11,7 @@ interface TerminalNodeProps {
   title?: string;
   color?: TerminalThemeColor;
   bootCommand?: string;
+  themeMode?: "dark" | "light";
   onClose?: () => void;
   onColorChange?: (color: TerminalThemeColor) => void;
   onTitleChange?: (title: string) => void;
@@ -34,10 +35,12 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
   title,
   color = "indigo",
   bootCommand,
+  themeMode = "dark",
   onClose,
   onColorChange,
   onTitleChange,
 }) => {
+  const cardRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -46,6 +49,21 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState(title || "");
 
+  // Prevent mouse wheel scroll events inside terminal from scrolling/zooming the canvas
+  useEffect(() => {
+    const cardEl = cardRef.current;
+    if (!cardEl) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.stopPropagation();
+    };
+
+    cardEl.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      cardEl.removeEventListener("wheel", handleWheel);
+    };
+  }, []);
+
   useEffect(() => {
     setTitleInput(title || "");
   }, [title]);
@@ -53,31 +71,57 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const isLight = themeMode === "light";
+
     // Initialize xterm.js instance
     const term = new Terminal({
       cursorBlink: true,
-      theme: {
-        background: "#0d1117",
-        foreground: "#c9d1d9",
-        cursor: "#58a6ff",
-        selectionBackground: "#1f6feb44",
-        black: "#484f58",
-        red: "#ff7b72",
-        green: "#3fb950",
-        yellow: "#d29922",
-        blue: "#58a6ff",
-        magenta: "#bc8cff",
-        cyan: "#39c5cf",
-        white: "#b1bac4",
-        brightBlack: "#6e7681",
-        brightRed: "#ffa198",
-        brightGreen: "#56d364",
-        brightYellow: "#e3b341",
-        brightBlue: "#79c0ff",
-        brightMagenta: "#d2a8ff",
-        brightCyan: "#56d4dd",
-        brightWhite: "#f0f6fc",
-      },
+      scrollback: 5000,
+      theme: isLight
+        ? {
+            background: "#ffffff",
+            foreground: "#0f172a",
+            cursor: "#4f46e5",
+            selectionBackground: "#cbd5e1",
+            black: "#0f172a",
+            red: "#b91c1c",
+            green: "#15803d",
+            yellow: "#b45309",
+            blue: "#1d4ed8",
+            magenta: "#7e22ce",
+            cyan: "#0e7490",
+            white: "#475569",
+            brightBlack: "#334155",
+            brightRed: "#dc2626",
+            brightGreen: "#16a34a",
+            brightYellow: "#d97706",
+            brightBlue: "#2563eb",
+            brightMagenta: "#9333ea",
+            brightCyan: "#0891b2",
+            brightWhite: "#1e293b",
+          }
+        : {
+            background: "#0d1117",
+            foreground: "#c9d1d9",
+            cursor: "#58a6ff",
+            selectionBackground: "#1f6feb44",
+            black: "#484f58",
+            red: "#ff7b72",
+            green: "#3fb950",
+            yellow: "#d29922",
+            blue: "#58a6ff",
+            magenta: "#bc8cff",
+            cyan: "#39c5cf",
+            white: "#b1bac4",
+            brightBlack: "#6e7681",
+            brightRed: "#ffa198",
+            brightGreen: "#56d364",
+            brightYellow: "#e3b341",
+            brightBlue: "#79c0ff",
+            brightMagenta: "#d2a8ff",
+            brightCyan: "#56d4dd",
+            brightWhite: "#f0f6fc",
+          },
       fontFamily: 'Consolas, Monaco, "Courier New", monospace',
       fontSize: 13,
       lineHeight: 1.2,
@@ -215,18 +259,32 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
     }
   };
 
+  const isLight = themeMode === "light";
+
   return (
-    <div className={`flex flex-col h-full w-full bg-[#0d1117] rounded-lg border ${theme.border} overflow-hidden shadow-2xl transition-colors duration-200`}>
+    <div
+      ref={cardRef}
+      onWheel={(e) => e.stopPropagation()}
+      className={`flex flex-col h-full w-full ${
+        isLight ? "bg-white border-slate-300/80 shadow-xl" : "bg-[#0d1117] border-[#30363d] shadow-2xl"
+      } rounded-xl border overflow-hidden transition-all duration-200`}
+    >
       {/* Terminal Card Header */}
-      <div className={`flex items-center justify-between px-3 py-1.5 ${theme.header} border-b border-[#30363d] drag-handle cursor-move select-none transition-colors duration-200`}>
+      <div
+        className={`flex items-center justify-between px-3 py-2 ${
+          isLight ? "bg-slate-100/90 border-slate-200" : "bg-[#161b22] border-[#30363d]"
+        } border-b drag-handle cursor-move select-none transition-colors duration-200`}
+      >
         <div className="flex items-center space-x-2">
+          {/* Indicador discreto de cor/categoria */}
           <button
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={handleCycleColor}
-            title="Clique para alterar a cor da categoria do terminal"
-            className={`w-3 h-3 rounded-full ${theme.dot} animate-pulse hover:scale-125 transition-transform cursor-pointer`}
+            title="Clique para alternar cor do terminal"
+            className={`w-2.5 h-2.5 rounded-full ${theme.dot} hover:scale-125 transition-transform cursor-pointer`}
           />
+
           {isEditingTitle ? (
             <input
               type="text"
@@ -241,7 +299,9 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
                 if (e.key === "Enter") handleTitleSubmit();
                 if (e.key === "Escape") setIsEditingTitle(false);
               }}
-              className="bg-[#0d1117] border border-[#30363d] rounded px-1.5 py-0.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-mono"
+              className={`${
+                isLight ? "bg-white border-slate-300 text-slate-800" : "bg-[#0d1117] border-[#30363d] text-slate-200"
+              } border rounded px-1.5 py-0.5 text-xs focus:outline-none focus:border-indigo-500 font-mono`}
             />
           ) : (
             <span
@@ -255,13 +315,16 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
                 e.stopPropagation();
                 setIsEditingTitle(true);
               }}
-              title="Clique para renomear este terminal"
-              className="text-xs font-medium text-slate-200 hover:text-indigo-300 cursor-pointer transition-colors"
+              title="Clique para renomear"
+              className={`text-xs font-semibold ${
+                isLight ? "text-slate-700 hover:text-indigo-600" : "text-slate-200 hover:text-indigo-400"
+              } cursor-pointer transition-colors`}
             >
               {title || `Terminal #${id.slice(0, 6)}`}
             </span>
           )}
         </div>
+
         <div className="flex items-center space-x-1">
           <button
             onPointerDown={(e) => e.stopPropagation()}
@@ -319,9 +382,16 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
       {/* Terminal Viewport */}
       <div
         className="flex-1 w-full h-full min-h-[150px] relative"
-        onPointerDown={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          xtermRef.current?.focus();
+        }}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          xtermRef.current?.focus();
+        }}
         onKeyDown={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
       >
         <div ref={containerRef} className="absolute inset-0 w-full h-full" />
       </div>
