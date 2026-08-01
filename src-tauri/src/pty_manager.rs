@@ -49,12 +49,22 @@ impl PtyManager {
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
         #[cfg(target_os = "windows")]
-        let cmd = CommandBuilder::new("powershell.exe");
+        let cmd = {
+            let mut cmd = CommandBuilder::new("powershell.exe");
+            cmd.env("TERM", "xterm-256color");
+            cmd
+        };
 
         #[cfg(not(target_os = "windows"))]
         let cmd = {
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-            CommandBuilder::new(shell)
+            let mut cmd = CommandBuilder::new(&shell);
+            if shell.ends_with("bash") || shell.ends_with("zsh") || shell.ends_with("fish") {
+                cmd.arg("-l");
+            }
+            cmd.env("TERM", "xterm-256color");
+            cmd.env("COLORTERM", "truecolor");
+            cmd
         };
 
         let _child = pair
