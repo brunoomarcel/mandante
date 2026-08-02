@@ -221,6 +221,57 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
     };
   }, [id, bootCommand]);
 
+  useEffect(() => {
+    if (xtermRef.current) {
+      const isLight = themeMode === "light";
+      xtermRef.current.options.theme = isLight
+        ? {
+            background: "#ffffff",
+            foreground: "#0f172a",
+            cursor: "#4f46e5",
+            selectionBackground: "#cbd5e1",
+            black: "#0f172a",
+            red: "#b91c1c",
+            green: "#15803d",
+            yellow: "#b45309",
+            blue: "#1d4ed8",
+            magenta: "#7e22ce",
+            cyan: "#0e7490",
+            white: "#475569",
+            brightBlack: "#334155",
+            brightRed: "#dc2626",
+            brightGreen: "#16a34a",
+            brightYellow: "#d97706",
+            brightBlue: "#2563eb",
+            brightMagenta: "#9333ea",
+            brightCyan: "#0891b2",
+            brightWhite: "#1e293b",
+          }
+        : {
+            background: "#0d1117",
+            foreground: "#c9d1d9",
+            cursor: "#58a6ff",
+            selectionBackground: "#1f6feb44",
+            black: "#484f58",
+            red: "#ff7b72",
+            green: "#3fb950",
+            yellow: "#d29922",
+            blue: "#58a6ff",
+            magenta: "#bc8cff",
+            cyan: "#39c5cf",
+            white: "#b1bac4",
+            brightBlack: "#6e7681",
+            brightRed: "#ffa198",
+            brightGreen: "#56d364",
+            brightYellow: "#e3b341",
+            brightBlue: "#79c0ff",
+            brightMagenta: "#d2a8ff",
+            brightCyan: "#56d4dd",
+            brightWhite: "#f0f6fc",
+          };
+    }
+  }, [themeMode]);
+
   const handleClear = () => {
     if (xtermRef.current) {
       xtermRef.current.clear();
@@ -331,22 +382,12 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              setIsEditingTitle(true);
-            }}
-            title="Renomear Terminal"
-            className="text-slate-400 hover:text-indigo-400 text-xs px-1.5 py-0.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-          >
-            ✏️
-          </button>
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
               handleClear();
             }}
             title="Limpar Terminal"
-            className="text-slate-400 hover:text-indigo-400 text-xs px-1.5 py-0.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+            className={`text-xs px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+              isLight ? "text-slate-500 hover:text-indigo-600 hover:bg-slate-200" : "text-slate-400 hover:text-indigo-400 hover:bg-slate-800"
+            }`}
           >
             🧹
           </button>
@@ -358,7 +399,9 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
               handleRestart();
             }}
             title="Reiniciar Sessão"
-            className="text-slate-400 hover:text-amber-400 text-xs px-1.5 py-0.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+            className={`text-xs px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+              isLight ? "text-slate-500 hover:text-amber-600 hover:bg-slate-200" : "text-slate-400 hover:text-amber-400 hover:bg-slate-800"
+            }`}
           >
             🔄
           </button>
@@ -371,7 +414,9 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
                 onClose();
               }}
               title="Fechar Terminal"
-              className="text-slate-400 hover:text-red-400 text-xs px-1.5 py-0.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+              className={`text-xs px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                isLight ? "text-slate-500 hover:text-red-600 hover:bg-slate-200" : "text-slate-400 hover:text-red-400 hover:bg-slate-800"
+              }`}
             >
               ✕
             </button>

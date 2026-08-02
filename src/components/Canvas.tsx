@@ -57,7 +57,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
           title={shape.props.title}
           color={shape.props.color || "indigo"}
           bootCommand={shape.props.bootCommand}
-          themeMode={document.documentElement.classList.contains("light") ? "light" : "dark"}
+          themeMode={document.querySelector(".canvas-light") ? "light" : "dark"}
           onClose={() => {
             editor.deleteShapes([shape.id]);
           }}
@@ -481,7 +481,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
   }));
 
   return (
-    <div className="w-full h-full relative">
+    <div className={`w-full h-full relative ${themeMode === "dark" ? "canvas-dark" : "canvas-light"}`}>
       <Tldraw
         shapeUtils={customShapeUtils}
         onMount={handleMount}

@@ -11,17 +11,11 @@ html, body, #root {
   padding: 0;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  background-color: #0b0c0e;
-  color: #f1f5f9;
 }
 
 /* =========================================================
-   ESTILOS PERMANENTES DA UI EXTERNA (DARK / NAVY FIXO)
+   ESTILOS PERMANENTES DA UI EXTERNA
    ========================================================= */
-.xterm-viewport {
-  background-color: #0d1117 !important;
-}
-
 .xterm {
   padding: 8px;
 }
@@ -35,10 +29,6 @@ html, body, #root {
 .canvas-dark .tl-canvas,
 .canvas-dark .tl-container {
   background-color: #0b0c0e !important;
-  background-image: 
-    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px) !important;
-  background-size: 20px 20px !important;
 }
 
 /* Canvas Light Mode */
@@ -46,12 +36,5 @@ html, body, #root {
 .canvas-light .tl-canvas,
 .canvas-light .tl-container {
   background-color: #f8f9fa !important;
-  background-image: 
-    linear-gradient(to right, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px) !important;
-  background-size: 20px 20px !important;
 }
 
-.tl-grid {
-  display: none !important;
-}
