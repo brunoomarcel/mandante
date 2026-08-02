@@ -40,6 +40,24 @@ fn read_text_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// Returns true if `command` is found on PATH (uses `which` on Unix, `where` on Windows).
+#[tauri::command]
+fn check_agent_installed(command: String) -> bool {
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("where")
+        .arg(&command)
+        .output();
+    #[cfg(not(target_os = "windows"))]
+    let result = std::process::Command::new("which")
+        .arg(&command)
+        .output();
+
+    match result {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pty_manager = PtyManager::new();
@@ -54,7 +72,8 @@ pub fn run() {
             resize_pty,
             close_pty,
             write_text_file,
-            read_text_file
+            read_text_file,
+            check_agent_installed
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -9,8 +9,14 @@ import {
   TLBaseShape,
   useEditor,
   createShapeId,
+  DEFAULT_EMBED_DEFINITIONS,
 } from "@tldraw/tldraw";
+
+const customEmbeds = DEFAULT_EMBED_DEFINITIONS.filter(
+  (embed) => embed.type === "figma" || embed.type === "excalidraw"
+);
 import { TerminalNode, TerminalThemeColor } from "./TerminalNode";
+import { RopeOverlay } from "./RopeOverlay";
 
 // Define the TLDraw custom shape interface for Terminal
 export type ITerminalShape = TLBaseShape<
@@ -107,6 +113,7 @@ export interface WorkspaceItem {
 
 export interface CanvasHandle {
   addTerminalNode: (title?: string, customX?: number, customY?: number, customCwd?: string, bootCommand?: string, agentType?: string) => void;
+  addNoteNode: (text?: string) => void;
   loadPreset: (presetType: "fullstack" | "grid") => void;
   broadcastCommand: (command: string) => void;
   clearCanvas: () => void;
@@ -118,32 +125,81 @@ export interface CanvasHandle {
   createWorkspace: (name?: string, cwd?: string, emoji?: string) => string | undefined;
   renameWorkspace: (pageId: string, newName: string, emoji?: string) => void;
   deleteWorkspace: (pageId: string) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  zoomToFit: () => void;
+  resetZoom: () => void;
+  getZoomLevel: () => number;
 }
 
 export interface CanvasProps {
-  themeMode?: "dark" | "light";
+  themeMode?: "dark" | "light" | "system";
+  onThemeChange?: (mode: "dark" | "light" | "system") => void;
 }
 
-export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "light" }, ref) => {
+export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "light", onThemeChange }, ref) => {
   const editorRef = useRef<Editor | null>(null);
 
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
     editor.user.updateUserPreferences({
-      colorScheme: themeMode === "dark" ? "dark" : "light",
+      colorScheme: themeMode,
     });
-
-    // Se o canvas acabou de abrir do zero (com apenas a página padrão "Page 1"), limpa a lista de páginas
-    const pages = editor.getPages();
-    if (pages.length === 1 && (pages[0].name === "Page 1" || pages[0].name === "Página 1")) {
-      // Renomeia a primeira página padrão para solicitar um workspace válido ou limpa conforme necessário
-    }
   }, [themeMode]);
+
+  // Garante a remoção ativa do botão '>', navegação nativa e item 'Visualizar' no menu
+  useEffect(() => {
+    const hideNativeToggleBtn = () => {
+      const selectors = [
+        ".tlui-navigation-zone",
+        ".tlui-page-menu",
+        "[data-testid*='navigation']",
+        "[data-testid*='page-menu']",
+        "[class*='navigation']",
+        "[class*='page-menu']",
+        "button[aria-label*='page']",
+        "button[aria-label*='navigation']",
+        "[data-testid='main-menu.view']",
+        "[data-testid*='menu.view']",
+        "[data-testid*='menu-item.view']",
+        "[data-testid*='preferences.theme']",
+        "[data-testid*='menu.theme']",
+      ];
+      selectors.forEach((sel) => {
+        document.querySelectorAll(sel).forEach((el) => {
+          (el as HTMLElement).style.setProperty("display", "none", "important");
+          (el as HTMLElement).style.setProperty("visibility", "hidden", "important");
+          (el as HTMLElement).style.setProperty("opacity", "0", "important");
+          (el as HTMLElement).style.setProperty("pointer-events", "none", "important");
+        });
+      });
+
+      // Oculta 'Visualizar' e 'Tema' do menu nativo do tldraw
+      document.querySelectorAll("button, [class*='menu__button'], [class*='item']").forEach((btn) => {
+        const txt = (btn.textContent || "").trim();
+        if (txt === "Visualizar" || txt === "View" || txt === "Tema" || txt === "Theme" || txt.startsWith("Tema") || txt.startsWith("Theme")) {
+          const parent = btn.closest(".tlui-menu__item, [class*='menu__item']") || btn;
+          (parent as HTMLElement).style.setProperty("display", "none", "important");
+          (parent as HTMLElement).style.setProperty("visibility", "hidden", "important");
+        }
+      });
+    };
+
+    hideNativeToggleBtn();
+    const observer = new MutationObserver(hideNativeToggleBtn);
+    observer.observe(document.body, { childList: true, subtree: true });
+    const interval = setInterval(hideNativeToggleBtn, 300);
+
+    return () => {
+      observer.disconnect();
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (editorRef.current) {
       editorRef.current.user.updateUserPreferences({
-        colorScheme: themeMode === "dark" ? "dark" : "light",
+        colorScheme: themeMode,
       });
     }
   }, [themeMode]);
@@ -505,8 +561,93 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     }
   }, []);
 
+  const getFocalPoint = useCallback((editor: Editor) => {
+    // 1. Se houver elementos selecionados, foca no centro da seleção
+    const selectionBounds = editor.getSelectionPageBounds();
+    if (selectionBounds && selectionBounds.width > 0) {
+      return editor.pageToScreen({
+        x: selectionBounds.x + selectionBounds.width / 2,
+        y: selectionBounds.y + selectionBounds.height / 2,
+      });
+    }
+
+    // 2. Se houver qualquer conteúdo/terminal no canvas, foca no centro do conteúdo
+    const pageBounds = editor.getCurrentPageBounds();
+    if (pageBounds && pageBounds.width > 0 && pageBounds.height > 0) {
+      return editor.pageToScreen({
+        x: pageBounds.x + pageBounds.width / 2,
+        y: pageBounds.y + pageBounds.height / 2,
+      });
+    }
+
+    // 3. Posição do cursor do mouse se ele estiver dentro do viewport
+    const mousePoint = editor.inputs.currentScreenPoint;
+    if (mousePoint && mousePoint.x > 0 && mousePoint.y > 0) {
+      return mousePoint;
+    }
+
+    // 4. Centro da tela
+    return editor.getViewportScreenCenter();
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    const currentZoom = editor.getZoomLevel();
+    const newZoom = Math.min(5, Math.round((currentZoom + 0.10) * 100) / 100);
+    const center = getFocalPoint(editor);
+    const pointInPage = editor.screenToPage(center);
+    const newCameraX = (center.x / newZoom) - pointInPage.x;
+    const newCameraY = (center.y / newZoom) - pointInPage.y;
+    editor.setCamera({ x: newCameraX, y: newCameraY, z: newZoom }, { animation: { duration: 100 } });
+  }, [getFocalPoint]);
+
+  const zoomOut = useCallback(() => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    const currentZoom = editor.getZoomLevel();
+    const newZoom = Math.max(0.1, Math.round((currentZoom - 0.10) * 100) / 100);
+    const center = getFocalPoint(editor);
+    const pointInPage = editor.screenToPage(center);
+    const newCameraX = (center.x / newZoom) - pointInPage.x;
+    const newCameraY = (center.y / newZoom) - pointInPage.y;
+    editor.setCamera({ x: newCameraX, y: newCameraY, z: newZoom }, { animation: { duration: 100 } });
+  }, [getFocalPoint]);
+
+  const zoomToFit = useCallback(() => {
+    if (!editorRef.current) return;
+    editorRef.current.zoomToFit();
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    if (!editorRef.current) return;
+    editorRef.current.resetZoom();
+  }, []);
+
+  const getZoomLevel = useCallback(() => {
+    if (!editorRef.current) return 1;
+    return editorRef.current.getZoomLevel();
+  }, []);
+
+  const addNoteNode = useCallback((text?: string) => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    const center = editor.getViewportPageBounds().center;
+    editor.createShape({
+      id: createShapeId(),
+      type: "note",
+      x: center.x - 100,
+      y: center.y - 100,
+      props: {
+        color: "yellow",
+        text: text || "Nova Anotação...",
+      },
+    });
+  }, []);
+
   useImperativeHandle(ref, () => ({
     addTerminalNode,
+    addNoteNode,
     loadPreset,
     broadcastCommand,
     clearCanvas,
@@ -518,19 +659,37 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     createWorkspace,
     renameWorkspace,
     deleteWorkspace,
+    zoomIn,
+    zoomOut,
+    zoomToFit,
+    resetZoom,
+    getZoomLevel,
   }));
 
   return (
     <div className={`w-full h-full relative ${themeMode === "dark" ? "canvas-dark" : "canvas-light"}`}>
       <style>{`
-        .tl-watermark, [class*="watermark"], a[href*="tldraw"],
-        .tlui-layout__top,
-        .tlui-layout__bottom,
-        .tlui-toolbar,
-        .tlui-style-panel,
+        .tl-watermark, [class*="watermark"], a[href*="tldraw"] {
+          display: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+        }
+
+        /* Oculta 100% do menu e botões nativos do tldraw no canto inferior esquerdo (incluindo o botão '>') */
         .tlui-navigation-zone,
-        .tlui-help-menu,
-        .tlui-menu_zone {
+        .tlui-page-menu,
+        [data-testid*="navigation"],
+        [data-testid*="page-menu"],
+        button[aria-label*="page"],
+        button[aria-label*="Page"],
+        button[aria-label*="navigation"],
+        button[title*="page"],
+        button[title*="Página"],
+        [class*="navigation"],
+        [class*="page-menu"],
+        [class*="zoom-menu"],
+        .tlui-zoom-menu {
           display: none !important;
           visibility: hidden !important;
           opacity: 0 !important;
@@ -538,6 +697,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
         }
       `}</style>
       <Tldraw
+        embeds={customEmbeds}
         shapeUtils={customShapeUtils}
         onMount={handleMount}
         {...({
@@ -556,6 +716,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
           },
         } as any)}
       />
+      <RopeOverlay editorRef={editorRef} />
     </div>
   );
 });

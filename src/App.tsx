@@ -1,7 +1,16 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
 import EmojiPicker, { Theme } from "emoji-picker-react";
 import { Canvas, CanvasHandle } from "./components/Canvas";
+import {
+  GeminiLogo,
+  ClaudeLogo,
+  OpenAILogo,
+  OpenCodeLogo,
+  AiderLogo,
+  EmptyTerminalLogo,
+} from "./components/AgentLogos";
 import {
   Plus,
   Terminal as TerminalIcon,
@@ -15,6 +24,17 @@ import {
   Sun,
   Moon,
   Folder,
+  Settings,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RotateCcw,
+  Globe,
+  Sliders,
+  StickyNote,
+  Search,
+  Command,
+  Keyboard,
 } from "lucide-react";
 
 export type Language = "pt" | "en" | "es";
@@ -54,16 +74,56 @@ const TRANSLATIONS: Record<Language, Record<string, string>> = {
 
 export type CanvasThemeMode = "light" | "dark" | "system";
 
+// Agent CLI registry — defines what command to check and how to install
+type AgentKey = "gemini" | "claude" | "opencode" | "codex" | "aider";
+const AGENT_INFO: Record<AgentKey, {
+  label: string;
+  checkCommand: string;
+  installCommand: string;
+  installNote?: string;
+  skipCheck?: boolean; // skip check for agents that use npx (always available)
+}> = {
+  gemini: {
+    label: "Gemini CLI",
+    checkCommand: "gemini",
+    installCommand: "npm install -g @google/gemini-cli",
+    skipCheck: true, // uses npx -y, so no install needed
+  },
+  claude: {
+    label: "Claude Code",
+    checkCommand: "claude",
+    installCommand: "npm install -g @anthropic-ai/claude-code",
+    installNote: "Requer Node.js 18+",
+  },
+  opencode: {
+    label: "OpenCode",
+    checkCommand: "opencode",
+    installCommand: "npm install -g opencode",
+  },
+  codex: {
+    label: "Codex CLI",
+    checkCommand: "codex",
+    installCommand: "npm install -g @openai/codex",
+    installNote: "Requer chave OPENAI_API_KEY",
+  },
+  aider: {
+    label: "Aider AI",
+    checkCommand: "aider",
+    installCommand: "pip install aider-install && aider-install",
+    installNote: "Requer Python 3.9+",
+  },
+};
+
 export const App: React.FC = () => {
   const canvasRef = useRef<CanvasHandle>(null);
   const [broadcastCmd, setBroadcastCmd] = useState("");
-  const [themeMode, setThemeMode] = useState<CanvasThemeMode>("light");
-  const [effectiveCanvasTheme, setEffectiveCanvasTheme] = useState<"light" | "dark">("light");
+  const [themeMode, setThemeMode] = useState<CanvasThemeMode>("dark");
+  const [effectiveCanvasTheme, setEffectiveCanvasTheme] = useState<"light" | "dark">("dark");
   const [language, setLanguage] = useState<Language>("pt");
 
   const t = TRANSLATIONS[language];
 
-  // Escuta sistema (prefers-color-scheme) apenas para o Canvas quando em modo 'system'
+  // Resolve e sincroniza 100% o tema do sistema para toda a aplicação (Canvas, Sidebar, Topbar, Modais)
   useEffect(() => {
     if (themeMode === "system") {
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -78,6 +138,8 @@ export const App: React.FC = () => {
     }
   }, [themeMode]);
 
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   const toggleTheme = () => {
     setThemeMode((prev) => {
       if (prev === "dark") return "light";
@@ -86,7 +148,79 @@ export const App: React.FC = () => {
     });
   };
 
+  const [zoomPercent, setZoomPercent] = useState(100);
+
+  const updateZoomState = useCallback(() => {
+    if (canvasRef.current) {
+      const level = canvasRef.current.getZoomLevel();
+      setZoomPercent(Math.round(level * 100));
+    }
+  }, []);
+
+  const handleZoomIn = () => {
+    canvasRef.current?.zoomIn();
+    setTimeout(updateZoomState, 120);
+  };
+
+  const handleZoomOut = () => {
+    canvasRef.current?.zoomOut();
+    setTimeout(updateZoomState, 120);
+  };
+
+  const handleZoomToFit = () => {
+    canvasRef.current?.zoomToFit();
+    setTimeout(updateZoomState, 120);
+  };
+
+  const handleResetZoom = () => {
+    canvasRef.current?.resetZoom();
+    setTimeout(updateZoomState, 120);
+  };
+
+  useEffect(() => {
+    const timer = setInterval(updateZoomState, 400);
+    return () => clearInterval(timer);
+  }, [updateZoomState]);
+
+  // Atalhos Globais de Teclado para Zoom (+ / -) em passos de 10%
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable ||
+          target.closest(".xterm") ||
+          target.closest("input") ||
+          target.closest("textarea"))
+      ) {
+        return;
+      }
+
+      if (e.key === "+" || e.key === "=" || e.code === "NumpadAdd") {
+        e.preventDefault();
+        canvasRef.current?.zoomIn();
+        setTimeout(updateZoomState, 120);
+      } else if (e.key === "-" || e.code === "NumpadSubtract") {
+        e.preventDefault();
+        canvasRef.current?.zoomOut();
+        setTimeout(updateZoomState, 120);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [updateZoomState]);
+
   const [isTerminalPickerOpen, setIsTerminalPickerOpen] = useState(false);
+  const [installModal, setInstallModal] = useState<{
+    agentKey: AgentKey;
+    label: string;
+    installCommand: string;
+    installNote?: string;
+  } | null>(null);
+  const [installCopied, setInstallCopied] = useState(false);
 
   const handleAddTerminalClick = () => {
     // Se não houver nenhum workspace criado/configurado pelo usuário, obriga a abrir o modal de workspace primeiro
@@ -98,11 +232,39 @@ export const App: React.FC = () => {
     setIsTerminalPickerOpen(true);
   };
 
-  const handleSelectTerminalType = (type: "empty" | "gemini" | "claude" | "opencode" | "codex" | "aider") => {
+  const handleSelectTerminalType = async (type: "empty" | AgentKey) => {
     setIsTerminalPickerOpen(false);
+
     if (type === "empty") {
       canvasRef.current?.addTerminalNode();
-    } else if (type === "gemini") {
+      refreshWorkspaces();
+      return;
+    }
+
+    const info = AGENT_INFO[type];
+
+    // Gemini uses npx -y so it never needs a local install check
+    if (!info.skipCheck) {
+      try {
+        const installed = await invoke<boolean>("check_agent_installed", {
+          command: info.checkCommand,
+        });
+        if (!installed) {
+          setInstallModal({ agentKey: type, ...info });
+          return;
+        }
+      } catch {
+        // If the check itself fails, just proceed normally
+      }
+    }
+
+    // CLI is available — create terminal
+    _createAgentTerminal(type);
+  };
+
+  /** Actually create the terminal node for the given agent type */
+  const _createAgentTerminal = (type: AgentKey | "empty") => {
+    if (type === "gemini") {
       canvasRef.current?.addTerminalNode("♊ Gemini Agent", undefined, undefined, undefined, "npx -y @google/gemini-cli", "gemini");
     } else if (type === "claude") {
       canvasRef.current?.addTerminalNode("🧠 Claude Code", undefined, undefined, undefined, "claude", "claude");
@@ -326,22 +488,29 @@ export const App: React.FC = () => {
             <button
               onClick={handleExportWorkspace}
               title={t.save}
-              className={`p-1.5 ${isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-[#21262d] text-slate-300"} rounded transition-colors`}
+              className={`p-1.5 ${isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-[#21262d] text-slate-300"} rounded transition-colors cursor-pointer`}
             >
               <Download className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={handleImportWorkspace}
               title={t.open}
-              className={`p-1.5 ${isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-[#21262d] text-slate-300"} rounded transition-colors`}
+              className={`p-1.5 ${isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-[#21262d] text-slate-300"} rounded transition-colors cursor-pointer`}
             >
               <Upload className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              title="Configurações & Preferências"
+              className={`p-1.5 ${isLight ? "hover:bg-slate-100 text-slate-600" : "hover:bg-[#21262d] text-slate-300"} rounded transition-colors cursor-pointer`}
+            >
+              <Settings className="w-3.5 h-3.5" />
             </button>
           </div>
           <button
             onClick={handleClearCanvas}
             title={t.clear}
-            className={`p-1.5 ${isLight ? "hover:bg-red-50 text-slate-500 hover:text-red-600" : "hover:bg-red-950/50 text-slate-400 hover:text-red-400"} rounded transition-colors`}
+            className={`p-1.5 ${isLight ? "hover:bg-red-50 text-slate-500 hover:text-red-600" : "hover:bg-red-950/50 text-slate-400 hover:text-red-400"} rounded transition-colors cursor-pointer`}
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -351,59 +520,138 @@ export const App: React.FC = () => {
       {/* Main Area */}
       <div className="flex-1 flex flex-col h-full relative">
         {/* Floating Top Toolbar */}
-        <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2 ${isLight ? "bg-white/95 border-slate-200 text-slate-800 shadow-md" : "bg-[#161b22]/95 border-[#30363d] text-slate-200 shadow-xl"
-          } backdrop-blur border rounded-full px-3 py-1 text-xs transition-colors duration-200`}>
+        <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-2.5 ${isLight ? "bg-white/95 border-slate-200 text-slate-800 shadow-md" : "bg-[#161b22]/95 border-[#30363d] text-slate-200 shadow-xl"
+          } backdrop-blur-md border rounded-full px-3.5 py-1.5 text-xs transition-colors duration-200`}>
           <form onSubmit={handleBroadcast} className="flex items-center space-x-2">
-            <Radio className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+            <Radio className="w-3.5 h-3.5 text-slate-400" />
             <input
               type="text"
               value={broadcastCmd}
               onChange={(e) => setBroadcastCmd(e.target.value)}
               placeholder={t.placeholder}
-              className={`bg-transparent ${isLight ? "text-slate-800 placeholder-slate-400" : "text-slate-200 placeholder-slate-500"} text-xs focus:outline-none w-60 font-mono`}
+              className={`bg-transparent ${isLight ? "text-slate-800 placeholder-slate-400" : "text-slate-200 placeholder-slate-500"} text-xs focus:outline-none w-56 font-mono`}
             />
             <button
               type="submit"
-              className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-full p-1 transition-colors"
+              title="Enviar comando em lote"
+              className={`rounded-full p-1 transition-colors cursor-pointer ${
+                isLight ? "bg-slate-800 text-white hover:bg-slate-700" : "bg-slate-200 text-slate-900 hover:bg-white"
+              }`}
             >
               <Send className="w-3 h-3" />
             </button>
           </form>
 
-
+          <div className={`h-4 w-px ${isLight ? "bg-slate-200" : "bg-[#30363d]"} mx-0.5`} />
 
           <button
             onClick={handleAddTerminalClick}
-            className="bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs px-2.5 py-1 rounded-full flex items-center gap-1 transition-colors shadow-sm cursor-pointer"
+            className={`font-semibold text-xs px-3 py-1 rounded-full flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ${
+              isLight ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-slate-100 text-slate-900 hover:bg-white"
+            }`}
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{t.createTerminal}</span>
           </button>
 
-          <div className={`h-4 w-px ${isLight ? "bg-slate-200" : "bg-[#30363d]"} mx-1`} />
-
-          {/* Canvas Theme Selector Button (Dark -> Light -> System) */}
+          {/* Seletor de Tema no topo ao lado do Novo Terminal (Local 1) */}
           <button
             onClick={toggleTheme}
-            title={`Tema do Canvas: ${themeMode.toUpperCase()} (Clique para alternar)`}
-            className={`px-2 py-0.5 ${isLight ? "hover:bg-slate-100 text-slate-700" : "hover:bg-[#21262d] text-slate-300"} rounded font-mono text-[10px] flex items-center gap-1.5 transition-colors`}
+            title={`Tema: ${themeMode.toUpperCase()} (Clique para alternar)`}
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+              isLight
+                ? "border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300"
+                : "border-[#30363d] text-slate-300 hover:bg-[#21262d] hover:border-slate-600"
+            }`}
           >
-            {themeMode === "dark" && <Moon className="w-3 h-3 text-indigo-400" />}
-            {themeMode === "light" && <Sun className="w-3 h-3 text-amber-500" />}
-            {themeMode === "system" && <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />}
+            {themeMode === "dark" && <Moon className="w-3.5 h-3.5 text-indigo-400" />}
+            {themeMode === "light" && <Sun className="w-3.5 h-3.5 text-amber-500" />}
+            {themeMode === "system" && <Sliders className="w-3.5 h-3.5 text-emerald-500" />}
             <span className="uppercase">{themeMode}</span>
           </button>
+
+          <div className={`h-4 w-px ${isLight ? "bg-slate-200" : "bg-[#30363d]"} mx-0.5`} />
+
+          {/* Presets de Terminais - Estilo Unificado e Elegante */}
+          <div className="flex items-center space-x-1.5">
+            <button
+              onClick={handleLoadFullstack}
+              title="Carregar Preset Fullstack (Dev, Build, Test)"
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                isLight
+                  ? "border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300"
+                  : "border-[#30363d] text-slate-300 hover:bg-[#21262d] hover:border-slate-600"
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5 text-slate-400" />
+              <span>Fullstack</span>
+            </button>
+
+            <button
+              onClick={handleLoadGrid}
+              title="Carregar Preset Grid 2x2 (4 Terminais)"
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                isLight
+                  ? "border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300"
+                  : "border-[#30363d] text-slate-300 hover:bg-[#21262d] hover:border-slate-600"
+              }`}
+            >
+              <Boxes className="w-3.5 h-3.5 text-slate-400" />
+              <span>Grid 2x2</span>
+            </button>
+          </div>
         </div>
 
-        {/* Canvas Interativo: Única área que altera de tema (light, dark, system) */}
+        {/* Canvas Interativo */}
         <main className={`flex-1 w-full h-full relative ${effectiveCanvasTheme === "light" ? "canvas-light" : "canvas-dark"}`}>
-          <Canvas ref={canvasRef} themeMode={effectiveCanvasTheme} />
+          <Canvas ref={canvasRef} themeMode={effectiveCanvasTheme} onThemeChange={setThemeMode} />
+
+          {/* Barra Flutuante Inferior de Controle de Zoom (Posicionada no canto inferior esquerdo) */}
+          <div className={`fixed bottom-2.5 left-2.5 z-50 ${
+            isLight ? "bg-white/95 text-slate-800 border-slate-200" : "bg-[#161b22]/95 text-slate-100 border-[#30363d]"
+          } backdrop-blur-md border rounded-full px-2.5 py-1 text-xs shadow-xl flex items-center space-x-1.5 transition-all`}>
+            <button
+              onClick={handleZoomOut}
+              title="Reduzir Zoom (-10%)"
+              className={`p-1 ${isLight ? "hover:bg-slate-100 text-slate-700" : "hover:bg-[#21262d] text-slate-300"} rounded-full transition-colors cursor-pointer`}
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+
+            <button
+              onClick={handleResetZoom}
+              title="Resetar Zoom para 100%"
+              className={`px-1.5 py-0.5 font-mono text-[11px] font-bold rounded ${
+                isLight ? "hover:bg-slate-100 text-indigo-600" : "hover:bg-[#21262d] text-indigo-400"
+              } transition-colors cursor-pointer`}
+            >
+              {zoomPercent}%
+            </button>
+
+            <button
+              onClick={handleZoomIn}
+              title="Aumentar Zoom (+10%)"
+              className={`p-1 ${isLight ? "hover:bg-slate-100 text-slate-700" : "hover:bg-[#21262d] text-slate-300"} rounded-full transition-colors cursor-pointer`}
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+
+            <div className={`h-3.5 w-px ${isLight ? "bg-slate-200" : "bg-[#30363d]"}`} />
+
+            <button
+              onClick={handleZoomToFit}
+              title="Ajustar à Tela (Fit)"
+              className={`p-1 ${isLight ? "hover:bg-slate-100 text-slate-700" : "hover:bg-[#21262d] text-slate-300"} rounded-full transition-colors cursor-pointer`}
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </main>
       </div>
 
       {/* Modal de Criar/Editar Workspace */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/75 backdrop-blur-md p-4">
           <div className={`w-full max-w-md ${isLight ? "bg-white text-slate-800 border-slate-200" : "bg-[#161b22] text-slate-100 border-[#30363d]"} border rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150`}>
             <div className={`px-5 py-4 border-b ${isLight ? "border-slate-200" : "border-[#30363d]"} flex items-center justify-between`}>
               <h3 className="text-sm font-bold tracking-wide">
@@ -549,28 +797,28 @@ export const App: React.FC = () => {
 
       {/* Pop-up Modal de Escolha do Tipo de Terminal / Agente */}
       {isTerminalPickerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className={`w-full max-w-sm ${isLight ? "bg-white text-slate-800 border-slate-200" : "bg-[#161b22] text-slate-100 border-[#30363d]"} border rounded-xl shadow-2xl p-4 overflow-hidden`}>
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-150">
+          <div className={`w-full max-w-md ${isLight ? "bg-white text-slate-800 border-slate-200" : "bg-[#161b22] text-slate-100 border-[#30363d]"} border rounded-xl shadow-2xl p-4 overflow-hidden`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-[#30363d] mb-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Criar Novo Terminal
               </h3>
               <button
                 onClick={() => setIsTerminalPickerOpen(false)}
-                className="text-slate-400 hover:text-slate-200 text-xs px-1"
+                className="text-slate-400 hover:text-slate-200 text-xs px-1 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-3">
               <button
                 onClick={() => handleSelectTerminalType("empty")}
-                className={`w-full p-2.5 rounded-lg border text-left flex items-center gap-3 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-slate-50 text-slate-800" : "border-[#30363d] hover:bg-[#21262d] text-slate-100"
+                className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-slate-50 text-slate-800" : "border-[#30363d] hover:bg-[#21262d] text-slate-100"
                   }`}
               >
-                <div className="w-8 h-8 rounded-lg bg-blue-600/10 text-blue-500 flex items-center justify-center font-bold text-sm shrink-0">
-                  💻
+                <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
+                  <EmptyTerminalLogo className="w-5 h-5" />
                 </div>
                 <div>
                   <div className="text-xs font-bold">Terminal Vazio</div>
@@ -578,17 +826,19 @@ export const App: React.FC = () => {
                 </div>
               </button>
 
-              <div className="pt-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 px-1">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2 px-1">
                   Ou Iniciar com Agente de IA
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2.5">
                   <button
                     onClick={() => handleSelectTerminalType("gemini")}
-                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-indigo-50 text-slate-800" : "border-[#30363d] hover:bg-indigo-950/40 text-slate-100"
+                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-indigo-50/70 text-slate-800" : "border-[#30363d] hover:bg-indigo-950/40 text-slate-100"
                       }`}
                   >
-                    <span className="text-base">♊</span>
+                    <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800/80 flex items-center justify-center shrink-0 p-1.5 shadow-sm">
+                      <GeminiLogo className="w-5 h-5" />
+                    </div>
                     <div>
                       <div className="text-xs font-bold">Gemini CLI</div>
                       <div className="text-[9px] text-slate-400">Google DeepMind</div>
@@ -597,10 +847,12 @@ export const App: React.FC = () => {
 
                   <button
                     onClick={() => handleSelectTerminalType("claude")}
-                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-amber-50 text-slate-800" : "border-[#30363d] hover:bg-amber-950/40 text-slate-100"
+                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-amber-50/70 text-slate-800" : "border-[#30363d] hover:bg-amber-950/40 text-slate-100"
                       }`}
                   >
-                    <span className="text-base">🧠</span>
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0 p-1.5">
+                      <ClaudeLogo className="w-5 h-5" />
+                    </div>
                     <div>
                       <div className="text-xs font-bold">Claude Code</div>
                       <div className="text-[9px] text-slate-400">Anthropic CLI</div>
@@ -608,26 +860,44 @@ export const App: React.FC = () => {
                   </button>
 
                   <button
-                    onClick={() => handleSelectTerminalType("opencode")}
-                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-emerald-50 text-slate-800" : "border-[#30363d] hover:bg-emerald-950/40 text-slate-100"
+                    onClick={() => handleSelectTerminalType("codex")}
+                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-teal-50/70 text-slate-800" : "border-[#30363d] hover:bg-teal-950/40 text-slate-100"
                       }`}
                   >
-                    <span className="text-base">🌐</span>
+                    <div className="w-8 h-8 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0 p-1.5">
+                      <OpenAILogo className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold">Codex CLI</div>
+                      <div className="text-[9px] text-slate-400">OpenAI Exclusive</div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleSelectTerminalType("opencode")}
+                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-emerald-50/70 text-slate-800" : "border-[#30363d] hover:bg-emerald-950/40 text-slate-100"
+                      }`}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0 p-1.5">
+                      <OpenCodeLogo className="w-5 h-5" />
+                    </div>
                     <div>
                       <div className="text-xs font-bold">OpenCode</div>
-                      <div className="text-[9px] text-slate-400">Codex / LLM</div>
+                      <div className="text-[9px] text-slate-400">Multi-Model Agent</div>
                     </div>
                   </button>
 
                   <button
                     onClick={() => handleSelectTerminalType("aider")}
-                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-rose-50 text-slate-800" : "border-[#30363d] hover:bg-rose-950/40 text-slate-100"
+                    className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer col-span-2 ${isLight ? "border-slate-200 hover:bg-rose-50/70 text-slate-800" : "border-[#30363d] hover:bg-rose-950/40 text-slate-100"
                       }`}
                   >
-                    <span className="text-base">⚡</span>
+                    <div className="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center shrink-0 p-1.5">
+                      <AiderLogo className="w-5 h-5" />
+                    </div>
                     <div>
                       <div className="text-xs font-bold">Aider AI</div>
-                      <div className="text-[9px] text-slate-400">Pair Programmer</div>
+                      <div className="text-[9px] text-slate-400">Pair Programmer CLI</div>
                     </div>
                   </button>
                 </div>
@@ -636,6 +906,93 @@ export const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── Modal de instalação de agente ───────────────────────────────────── */}
+      {installModal && (
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-150">
+          <div className={`w-full max-w-sm ${
+            isLight ? "bg-white text-slate-800 border-slate-200" : "bg-[#0d1117] text-slate-100 border-[#30363d]"
+          } border rounded-2xl shadow-2xl overflow-hidden`}>
+
+            {/* Header */}
+            <div className={`px-5 pt-5 pb-4 border-b ${ isLight ? "border-slate-100" : "border-[#21262d]" }`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1">Agente não encontrado</div>
+                  <h2 className="text-sm font-bold">{installModal.label} não está instalado</h2>
+                  <p className={`text-xs mt-1 ${ isLight ? "text-slate-500" : "text-slate-400" }`}>
+                    Instale o CLI para usar este agente no Mandante.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setInstallModal(null)}
+                  className="text-slate-400 hover:text-slate-200 shrink-0 mt-0.5 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Install command */}
+            <div className="px-5 py-4">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Comando de instalação</div>
+              <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 font-mono text-[11px] ${
+                isLight ? "bg-slate-50 border border-slate-200 text-slate-800" : "bg-[#161b22] border border-[#30363d] text-slate-200"
+              }`}>
+                <span className="flex-1 select-all break-all">{installModal.installCommand}</span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(installModal.installCommand);
+                    setInstallCopied(true);
+                    setTimeout(() => setInstallCopied(false), 2000);
+                  }}
+                  className="shrink-0 text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer text-[10px] font-semibold"
+                >
+                  {installCopied ? "✓ Copiado" : "Copiar"}
+                </button>
+              </div>
+              {installModal.installNote && (
+                <p className="text-[10px] text-slate-500 mt-2 px-0.5">
+                  ℹ️ {installModal.installNote}
+                </p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className={`px-5 pb-5 flex flex-col gap-2`}>
+              <button
+                onClick={() => {
+                  // Open a blank terminal with the install command pre-loaded
+                  canvasRef.current?.addTerminalNode(
+                    `📦 Instalar ${installModal.label}`,
+                    undefined, undefined, undefined,
+                    installModal.installCommand
+                  );
+                  refreshWorkspaces();
+                  setInstallModal(null);
+                }}
+                className="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all cursor-pointer"
+              >
+                Abrir terminal e instalar agora
+              </button>
+              <button
+                onClick={() => {
+                  setInstallModal(null);
+                  _createAgentTerminal(installModal.agentKey);
+                }}
+                className={`w-full py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+                  isLight
+                    ? "border-slate-200 text-slate-600 hover:bg-slate-50"
+                    : "border-[#30363d] text-slate-400 hover:bg-[#21262d]"
+                }`}
+              >
+                Continuar mesmo assim
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
