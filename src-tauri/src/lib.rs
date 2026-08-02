@@ -8,10 +8,11 @@ fn create_pty(
     id: String,
     cols: u16,
     rows: u16,
+    cwd: Option<String>,
     state: State<'_, PtyManager>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
-    state.spawn(id, cols, rows, app_handle)
+    state.spawn(id, cols, rows, cwd, app_handle)
 }
 
 #[tauri::command]

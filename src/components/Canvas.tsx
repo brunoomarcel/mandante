@@ -22,6 +22,7 @@ export type ITerminalShape = TLBaseShape<
     title: string;
     color?: TerminalThemeColor;
     bootCommand?: string;
+    cwd?: string;
   }
 >;
 
@@ -37,6 +38,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
       title: "Terminal",
       color: "indigo",
       bootCommand: "",
+      cwd: "",
     };
   }
 
@@ -57,6 +59,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
           title={shape.props.title}
           color={shape.props.color || "indigo"}
           bootCommand={shape.props.bootCommand}
+          cwd={shape.props.cwd}
           themeMode={document.querySelector(".canvas-light") ? "light" : "dark"}
           onClose={() => {
             editor.deleteShapes([shape.id]);
@@ -97,10 +100,13 @@ export interface WorkspaceItem {
   id: string;
   name: string;
   terminalCount: number;
+  cwd?: string;
+  emoji?: string;
+  color?: string;
 }
 
 export interface CanvasHandle {
-  addTerminalNode: (title?: string, customX?: number, customY?: number) => void;
+  addTerminalNode: (title?: string, customX?: number, customY?: number, customCwd?: string) => void;
   loadPreset: (presetType: "fullstack" | "grid") => void;
   broadcastCommand: (command: string) => void;
   clearCanvas: () => void;
@@ -109,7 +115,8 @@ export interface CanvasHandle {
   getWorkspaces: () => WorkspaceItem[];
   getActiveWorkspaceId: () => string;
   switchWorkspace: (pageId: string) => void;
-  createWorkspace: (name?: string) => string | undefined;
+  createWorkspace: (name?: string, cwd?: string, emoji?: string, color?: string) => string | undefined;
+  renameWorkspace: (pageId: string, newName: string, emoji?: string, color?: string) => void;
   deleteWorkspace: (pageId: string) => void;
 }
 
@@ -117,7 +124,7 @@ export interface CanvasProps {
   themeMode?: "dark" | "light";
 }
 
-export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark" }, ref) => {
+export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "light" }, ref) => {
   const editorRef = useRef<Editor | null>(null);
 
   const handleMount = useCallback((editor: Editor) => {
@@ -125,6 +132,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
     editor.user.updateUserPreferences({
       colorScheme: themeMode === "dark" ? "dark" : "light",
     });
+
+    // Se o canvas acabou de abrir do zero (com apenas a página padrão "Page 1"), limpa a lista de páginas
+    const pages = editor.getPages();
+    if (pages.length === 1 && (pages[0].name === "Page 1" || pages[0].name === "Página 1")) {
+      // Renomeia a primeira página padrão para solicitar um workspace válido ou limpa conforme necessário
+    }
   }, [themeMode]);
 
   useEffect(() => {
@@ -136,7 +149,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
   }, [themeMode]);
 
   const addTerminalNode = useCallback(
-    (title?: string, customX?: number, customY?: number) => {
+    (title?: string, customX?: number, customY?: number, customCwd?: string) => {
       if (!editorRef.current) return;
 
       const editor = editorRef.current;
@@ -144,6 +157,10 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
       const x = customX !== undefined ? customX : center.x - 320;
       const y = customY !== undefined ? customY : center.y - 200;
       const id = `term-${Math.random().toString(36).substring(2, 9)}`;
+
+      // Tenta obter o cwd vinculado à página ativa ou usa a prop customizada
+      const currentPageId = editor.getCurrentPageId();
+      const cwd = customCwd !== undefined ? customCwd : (pageCwdMap.current[currentPageId] || "");
 
       editor.createShape({
         id: createShapeId(),
@@ -155,6 +172,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
           h: 400,
           terminalId: id,
           title: title || `Terminal (${id.slice(5)})`,
+          cwd,
         },
       });
     },
@@ -174,22 +192,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
     if (!editorRef.current) return;
     const editor = editorRef.current;
     const shapes = editor.getCurrentPageShapes();
-    const terminals = shapes
-      .filter((s) => s.type === "terminal")
-      .map((s) => {
-        const ts = s as ITerminalShape;
-        return {
-          x: ts.x,
-          y: ts.y,
-          w: ts.props.w,
-          h: ts.props.h,
-          title: ts.props.title,
-          color: ts.props.color,
-          bootCommand: ts.props.bootCommand,
-        };
-      });
-
-    const json = JSON.stringify(terminals, null, 2);
+    
+    // Salva o snapshot completo das formas da página (terminais, imagens, desenhos, etc.)
+    const json = JSON.stringify(shapes, null, 2);
 
     try {
       // Abre a caixa de diálogo nativa do Sistema Operacional para Escolher Pasta e Nome
@@ -235,25 +240,24 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
         if (Array.isArray(items)) {
           clearCanvas();
           const editor = editorRef.current!;
+          
           items.forEach((item: any) => {
-            const id = `term-${Math.random().toString(36).substring(2, 9)}`;
-            editor.createShape({
-              id: createShapeId(),
-              type: "terminal",
-              x: item.x || 0,
-              y: item.y || 0,
-              props: {
-                w: item.w || 640,
-                h: item.h || 400,
-                terminalId: id,
-                title: item.title || "Terminal",
-                color: item.color || "indigo",
-                bootCommand: item.bootCommand || "",
-              },
-            });
+            if (item.type === "terminal") {
+              const id = `term-${Math.random().toString(36).substring(2, 9)}`;
+              editor.createShape({
+                ...item,
+                id: createShapeId(),
+                props: {
+                  ...item.props,
+                  terminalId: id,
+                },
+              });
+            } else {
+              editor.createShape(item);
+            }
           });
 
-          await message(`Workspace carregado com sucesso!\n(${items.length} terminais ativos)`, {
+          await message(`Workspace carregado com sucesso!\n(${items.length} itens restaurados)`, {
             title: "Mandante Spatial Orchestrator",
             kind: "info",
           });
@@ -276,21 +280,19 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
               clearCanvas();
               const editor = editorRef.current!;
               items.forEach((item: any) => {
-                const id = `term-${Math.random().toString(36).substring(2, 9)}`;
-                editor.createShape({
-                  id: createShapeId(),
-                  type: "terminal",
-                  x: item.x || 0,
-                  y: item.y || 0,
-                  props: {
-                    w: item.w || 640,
-                    h: item.h || 400,
-                    terminalId: id,
-                    title: item.title || "Terminal",
-                    color: item.color || "indigo",
-                    bootCommand: item.bootCommand || "",
-                  },
-                });
+                if (item.type === "terminal") {
+                  const id = `term-${Math.random().toString(36).substring(2, 9)}`;
+                  editor.createShape({
+                    ...item,
+                    id: createShapeId(),
+                    props: {
+                      ...item.props,
+                      terminalId: id,
+                    },
+                  });
+                } else {
+                  editor.createShape(item);
+                }
               });
             }
           } catch (e) {}
@@ -418,25 +420,39 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
     });
   }, []);
 
+  const pageCwdMap = useRef<Record<string, string>>({});
+  const pageEmojiMap = useRef<Record<string, string>>({});
+  const pageColorMap = useRef<Record<string, string>>({});
+
   const getWorkspaces = useCallback((): WorkspaceItem[] => {
     if (!editorRef.current) return [];
     const editor = editorRef.current;
     const pages = editor.getPages();
-    return pages.map((page) => {
-      const pageShapeIds = editor.getPageShapeIds(page.id);
-      let terminalCount = 0;
-      pageShapeIds.forEach((id) => {
-        const shape = editor.getShape(id);
-        if (shape && shape.type === "terminal") {
-          terminalCount++;
-        }
+    return pages
+      .filter((page) => {
+        // Se for a página inicial vazia "Page 1" do tldraw sem nenhuma alteração, desconsidera da lista
+        const isDefaultUnconfigured = (page.name === "Page 1" || page.name === "Página 1") && !pageCwdMap.current[page.id] && !pageEmojiMap.current[page.id];
+        return !isDefaultUnconfigured || pages.length === 1;
+      })
+      .map((page) => {
+        const pageShapeIds = editor.getPageShapeIds(page.id);
+        let terminalCount = 0;
+        pageShapeIds.forEach((id) => {
+          const shape = editor.getShape(id);
+          if (shape && shape.type === "terminal") {
+            terminalCount++;
+          }
+        });
+
+        return {
+          id: page.id,
+          name: page.name,
+          terminalCount,
+          cwd: pageCwdMap.current[page.id] || "",
+          emoji: pageEmojiMap.current[page.id] || "📁",
+          color: pageColorMap.current[page.id] || "indigo",
+        };
       });
-      return {
-        id: page.id,
-        name: page.name,
-        terminalCount,
-      };
-    });
   }, []);
 
   const getActiveWorkspaceId = useCallback((): string => {
@@ -449,13 +465,38 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
     editorRef.current.setCurrentPage(pageId as any);
   }, []);
 
-  const createWorkspace = useCallback((name?: string) => {
+  const createWorkspace = useCallback((name?: string, cwd?: string, emoji?: string, color?: string) => {
     if (!editorRef.current) return;
     const editor = editorRef.current;
-    const count = editor.getPages().length + 1;
-    const pageId = createShapeId();
-    editor.createPage({ name: name || `Workspace ${count}` });
-    return pageId;
+    const pages = editor.getPages();
+
+    // Se só existe 1 página e é a página inicial vazia e sem configuração "Page 1", reaproveita ela
+    const defaultPage = pages.find((p) => (p.name === "Page 1" || p.name === "Página 1") && !pageCwdMap.current[p.id] && !pageEmojiMap.current[p.id]);
+
+    let targetPageId: string;
+    if (defaultPage) {
+      editor.renamePage(defaultPage.id as any, name || "Novo Workspace");
+      targetPageId = defaultPage.id;
+    } else {
+      const count = pages.length + 1;
+      editor.createPage({ name: name || `Workspace ${count}` });
+      targetPageId = editor.getCurrentPageId();
+    }
+
+    if (cwd) pageCwdMap.current[targetPageId] = cwd;
+    if (emoji) pageEmojiMap.current[targetPageId] = emoji;
+    if (color) pageColorMap.current[targetPageId] = color;
+
+    editor.setCurrentPage(targetPageId as any);
+    return targetPageId;
+  }, []);
+
+  const renameWorkspace = useCallback((pageId: string, newName: string, emoji?: string, color?: string) => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    editor.renamePage(pageId as any, newName);
+    if (emoji) pageEmojiMap.current[pageId] = emoji;
+    if (color) pageColorMap.current[pageId] = color;
   }, []);
 
   const deleteWorkspace = useCallback((pageId: string) => {
@@ -477,14 +518,43 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "dark
     getActiveWorkspaceId,
     switchWorkspace,
     createWorkspace,
+    renameWorkspace,
     deleteWorkspace,
   }));
 
   return (
     <div className={`w-full h-full relative ${themeMode === "dark" ? "canvas-dark" : "canvas-light"}`}>
+      <style>{`
+        .tl-watermark, [class*="watermark"], a[href*="tldraw"],
+        .tlui-layout__top,
+        .tlui-layout__bottom,
+        .tlui-toolbar,
+        .tlui-style-panel,
+        .tlui-navigation-zone,
+        .tlui-help-menu,
+        .tlui-menu_zone {
+          display: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
+          pointer-events: none !important;
+        }
+      `}</style>
       <Tldraw
         shapeUtils={customShapeUtils}
         onMount={handleMount}
+        assetStore={{
+          async upload(_type, file) {
+            return new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = (e) => reject(e);
+              reader.readAsDataURL(file);
+            });
+          },
+          async resolve(asset) {
+            return asset.props.src;
+          },
+        }}
       />
     </div>
   );

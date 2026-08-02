@@ -33,6 +33,7 @@ impl PtyManager {
         id: String,
         cols: u16,
         rows: u16,
+        cwd: Option<String>,
         app_handle: AppHandle,
     ) -> Result<(), String> {
         let pty_system = native_pty_system();
@@ -49,14 +50,14 @@ impl PtyManager {
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
         #[cfg(target_os = "windows")]
-        let cmd = {
+        let mut cmd = {
             let mut cmd = CommandBuilder::new("powershell.exe");
             cmd.env("TERM", "xterm-256color");
             cmd
         };
 
         #[cfg(not(target_os = "windows"))]
-        let cmd = {
+        let mut cmd = {
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
             let mut cmd = CommandBuilder::new(&shell);
             if shell.ends_with("bash") || shell.ends_with("zsh") || shell.ends_with("fish") {
@@ -66,6 +67,13 @@ impl PtyManager {
             cmd.env("COLORTERM", "truecolor");
             cmd
         };
+
+        if let Some(path) = cwd {
+            let p = path.trim();
+            if !p.is_empty() && std::path::Path::new(p).exists() {
+                cmd.cwd(p);
+            }
+        }
 
         let _child = pair
             .slave

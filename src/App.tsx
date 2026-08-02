@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Canvas, CanvasHandle } from "./components/Canvas";
 import {
   Plus,
@@ -12,6 +13,7 @@ import {
   Upload,
   Sun,
   Moon,
+  Folder,
 } from "lucide-react";
 
 export type Language = "pt" | "en" | "es";
@@ -54,8 +56,8 @@ export type CanvasThemeMode = "light" | "dark" | "system";
 export const App: React.FC = () => {
   const canvasRef = useRef<CanvasHandle>(null);
   const [broadcastCmd, setBroadcastCmd] = useState("");
-  const [themeMode, setThemeMode] = useState<CanvasThemeMode>("dark");
-  const [effectiveCanvasTheme, setEffectiveCanvasTheme] = useState<"light" | "dark">("dark");
+  const [themeMode, setThemeMode] = useState<CanvasThemeMode>("light");
+  const [effectiveCanvasTheme, setEffectiveCanvasTheme] = useState<"light" | "dark">("light");
   const [language, setLanguage] = useState<Language>("pt");
 
   const t = TRANSLATIONS[language];
@@ -84,6 +86,12 @@ export const App: React.FC = () => {
   };
 
   const handleAddTerminal = () => {
+    // Se não houver nenhum workspace criado/configurado pelo usuário, obriga a abrir o modal primeiro
+    const userWorkspaces = workspaces.filter((ws: any) => !((ws.name === "Page 1" || ws.name === "Página 1") && !ws.cwd));
+    if (userWorkspaces.length === 0) {
+      handleOpenModal();
+      return;
+    }
     canvasRef.current?.addTerminalNode();
   };
 
@@ -115,7 +123,7 @@ export const App: React.FC = () => {
   };
 
   // Gerenciamento de Workspaces
-  const [workspaces, setWorkspaces] = useState<{ id: string; name: string; terminalCount: number }[]>([]);
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string; terminalCount: number; cwd?: string }[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
 
   const refreshWorkspaces = useCallback(() => {
@@ -128,12 +136,74 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(refreshWorkspaces, 300);
+    const timer = setTimeout(() => {
+      refreshWorkspaces();
+    }, 400);
     return () => clearTimeout(timer);
   }, [refreshWorkspaces]);
 
-  const handleCreateWorkspace = () => {
-    canvasRef.current?.createWorkspace();
+  // Modal de Workspace (Criar / Editar)
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingWsId, setEditingWsId] = useState<string | null>(null);
+  const [newWsName, setNewWsName] = useState("");
+  const [newWsCwd, setNewWsCwd] = useState("");
+  const [newWsEmoji, setNewWsEmoji] = useState("⚡");
+  const [newWsColor, setNewWsColor] = useState("indigo");
+
+  const EMOJI_OPTIONS = ["⚡", "🚀", "💻", "🗄️", "🛠️", "🎯", "🔥", "⚙️", "🌐", "📦"];
+  const COLOR_OPTIONS = [
+    { id: "indigo", bg: "bg-indigo-500", text: "text-indigo-500" },
+    { id: "emerald", bg: "bg-emerald-500", text: "text-emerald-500" },
+    { id: "amber", bg: "bg-amber-500", text: "text-amber-500" },
+    { id: "rose", bg: "bg-rose-500", text: "text-rose-500" },
+    { id: "purple", bg: "bg-purple-500", text: "text-purple-500" },
+    { id: "blue", bg: "bg-blue-500", text: "text-blue-500" },
+  ];
+
+  const handleOpenModal = () => {
+    setEditingWsId(null);
+    setNewWsName(`Workspace ${(workspaces.length || 0) + 1}`);
+    setNewWsCwd("");
+    setNewWsEmoji("⚡");
+    setNewWsColor("indigo");
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (ws: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingWsId(ws.id);
+    setNewWsName(ws.name);
+    setNewWsCwd(ws.cwd || "");
+    setNewWsEmoji(ws.emoji || "📁");
+    setNewWsColor(ws.color || "indigo");
+    setIsModalOpen(true);
+  };
+
+  const handleSelectFolder = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Selecionar Repositório / Pasta do Projeto",
+      });
+      if (selected && typeof selected === "string") {
+        setNewWsCwd(selected);
+      }
+    } catch (err) {
+      console.error("Erro ao selecionar pasta:", err);
+    }
+  };
+
+  const handleConfirmWorkspace = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (canvasRef.current) {
+      if (editingWsId) {
+        canvasRef.current.renameWorkspace(editingWsId, newWsName.trim(), newWsEmoji, newWsColor);
+      } else {
+        canvasRef.current.createWorkspace(newWsName.trim(), newWsCwd.trim(), newWsEmoji, newWsColor);
+      }
+    }
+    setIsModalOpen(false);
     refreshWorkspaces();
   };
 
@@ -171,7 +241,7 @@ export const App: React.FC = () => {
                 Workspaces
               </span>
               <button
-                onClick={handleCreateWorkspace}
+                onClick={handleOpenModal}
                 title="Criar novo Workspace"
                 className="text-indigo-500 hover:text-indigo-600 p-0.5 rounded"
               >
@@ -180,7 +250,9 @@ export const App: React.FC = () => {
             </div>
 
             <div className="space-y-0.5">
-              {workspaces.map((ws) => {
+              {workspaces
+                .filter((ws: any) => !((ws.name === "Page 1" || ws.name === "Página 1") && !ws.cwd))
+                .map((ws: any) => {
                 const isActive = ws.id === activeWorkspaceId;
                 return (
                   <div
@@ -195,17 +267,29 @@ export const App: React.FC = () => {
                         : "text-slate-400 hover:bg-[#21262d]/60"
                       } rounded-md cursor-pointer transition-all`}
                   >
-                    <span className="flex items-center gap-1.5 truncate">
-                      <TerminalIcon
-                        className={`w-3.5 h-3.5 ${isActive ? "text-indigo-500" : isLight ? "text-slate-400" : "text-slate-500"}`}
-                      />
-                      <span className="truncate">{ws.name}</span>
+                    <span className="flex flex-col truncate min-w-0 pr-1">
+                      <span className="flex items-center gap-1.5 truncate">
+                        <span className="text-xs">{ws.emoji || "📁"}</span>
+                        <span className="truncate">{ws.name}</span>
+                      </span>
+                      {ws.cwd && (
+                        <span className="text-[9px] text-slate-400 truncate font-mono ml-5">
+                          {ws.cwd.split("/").pop() || ws.cwd}
+                        </span>
+                      )}
                     </span>
 
                     <div className="flex items-center space-x-1 shrink-0">
                       <span className={`text-[10px] ${isLight ? "bg-slate-200 text-slate-700" : "bg-[#30363d] text-slate-300"} px-1.5 py-0.2 rounded-full font-mono`}>
                         {ws.terminalCount}
                       </span>
+                      <button
+                        onClick={(e) => handleOpenEditModal(ws, e)}
+                        title="Editar / Renomear Workspace"
+                        className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-500 transition-opacity"
+                      >
+                        ✏️
+                      </button>
                       {workspaces.length > 1 && (
                         <button
                           onClick={(e) => handleDeleteWorkspace(ws.id, e)}
@@ -286,23 +370,6 @@ export const App: React.FC = () => {
 
           <div className={`h-4 w-px ${isLight ? "bg-slate-200" : "bg-[#30363d]"} mx-1`} />
 
-          <button
-            onClick={handleLoadFullstack}
-            className={`px-2 py-0.5 ${isLight ? "hover:bg-slate-100 text-slate-700" : "hover:bg-[#21262d] text-slate-300"} rounded font-medium flex items-center gap-1 text-[11px] transition-colors`}
-          >
-            <Zap className="w-3 h-3 text-amber-500" />
-            Fullstack
-          </button>
-          <button
-            onClick={handleLoadGrid}
-            className={`px-2 py-0.5 ${isLight ? "hover:bg-slate-100 text-slate-700" : "hover:bg-[#21262d] text-slate-300"} rounded font-medium flex items-center gap-1 text-[11px] transition-colors`}
-          >
-            <Boxes className="w-3 h-3 text-emerald-500" />
-            Grid 2x2
-          </button>
-
-          <div className={`h-4 w-px ${isLight ? "bg-slate-200" : "bg-[#30363d]"} mx-1`} />
-
           {/* Canvas Theme Selector Button (Dark -> Light -> System) */}
           <button
             onClick={toggleTheme}
@@ -321,6 +388,127 @@ export const App: React.FC = () => {
           <Canvas ref={canvasRef} themeMode={effectiveCanvasTheme} />
         </main>
       </div>
+
+      {/* Modal de Criar/Editar Workspace */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className={`w-full max-w-md ${isLight ? "bg-white text-slate-800 border-slate-200" : "bg-[#161b22] text-slate-100 border-[#30363d]"} border rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150`}>
+            <div className={`px-5 py-4 border-b ${isLight ? "border-slate-200" : "border-[#30363d]"} flex items-center justify-between`}>
+              <h3 className="text-sm font-bold tracking-wide">
+                {editingWsId ? "Editar Workspace" : "Novo Workspace"}
+              </h3>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-slate-400 hover:text-slate-200 text-xs px-1.5 py-0.5 rounded"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmWorkspace} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  Nome do Workspace
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newWsName}
+                  onChange={(e) => setNewWsName(e.target.value)}
+                  placeholder="Ex: Medainev / Meu Projeto"
+                  className={`w-full px-3 py-2 text-xs rounded-lg border font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 ${isLight ? "bg-slate-100 border-slate-300 text-slate-900" : "bg-[#0d1117] border-[#30363d] text-slate-100"
+                    }`}
+                />
+              </div>
+
+              {/* Emoji & Cor */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                    Emoji / Ícone
+                  </label>
+                  <div className="flex flex-wrap gap-1 bg-[#0d1117]/50 p-1.5 rounded-lg border border-[#30363d]/50">
+                    {EMOJI_OPTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => setNewWsEmoji(emoji)}
+                        className={`w-6 h-6 text-xs flex items-center justify-center rounded ${newWsEmoji === emoji ? "bg-indigo-600 text-white" : "hover:bg-slate-700/50"}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                    Cor Tema
+                  </label>
+                  <div className="flex items-center gap-2 pt-1.5">
+                    {COLOR_OPTIONS.map((col) => (
+                      <button
+                        key={col.id}
+                        type="button"
+                        onClick={() => setNewWsColor(col.id)}
+                        className={`w-6 h-6 rounded-full ${col.bg} transition-transform ${newWsColor === col.id ? "ring-2 ring-white scale-110" : "hover:scale-105 opacity-80"}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  Repositório / Diretório do Projeto
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={newWsCwd}
+                    placeholder="Nenhuma pasta selecionada (padrão do sistema)"
+                    className={`flex-1 px-3 py-2 text-xs rounded-lg border font-mono truncate ${isLight ? "bg-slate-100 border-slate-300 text-slate-600" : "bg-[#0d1117] border-[#30363d] text-slate-400"
+                      }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSelectFolder}
+                    className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-medium transition-colors cursor-pointer shrink-0 ${
+                      isLight ? "bg-white border-slate-300 text-slate-700 hover:bg-slate-50" : "bg-[#21262d] border-[#30363d] text-slate-200 hover:bg-[#30363d]"
+                    }`}
+                  >
+                    <Folder className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Buscar</span>
+                  </button>
+                </div>
+                {newWsCwd && (
+                  <p className="mt-1 text-[10px] text-emerald-500 font-mono truncate">
+                    ✓ Todos os novos terminais iniciarão em: {newWsCwd}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${isLight ? "hover:bg-slate-200 text-slate-600" : "hover:bg-[#21262d] text-slate-300"
+                    }`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
+                >
+                  {editingWsId ? "Salvar Alterações" : "Criar Workspace"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -20,6 +20,20 @@ html, body, #root {
   padding: 8px;
 }
 
+/* Melhorar nitidez de texto e evitar subpixel blur no Canvas/xterm */
+body, .xterm, canvas {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+/* Forçar transformações CSS 3D sem blur no tldraw HTMLContainer */
+.tl-container, .tl-html-container {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
 /* =========================================================
    ESTILOS DO CANVAS (APENAS O CANVAS RESPONDE AO TEMA)
    ========================================================= */
@@ -36,5 +50,16 @@ html, body, #root {
 .canvas-light .tl-canvas,
 .canvas-light .tl-container {
   background-color: #f8f9fa !important;
+}
+
+/* Ocultar marca d'água / logo do tldraw */
+.tl-watermark,
+.tl-watermark__link,
+[data-testid="watermark"],
+a[href*="tldraw.com"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 

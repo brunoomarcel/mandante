@@ -11,6 +11,7 @@ interface TerminalNodeProps {
   title?: string;
   color?: TerminalThemeColor;
   bootCommand?: string;
+  cwd?: string;
   themeMode?: "dark" | "light";
   onClose?: () => void;
   onColorChange?: (color: TerminalThemeColor) => void;
@@ -35,6 +36,7 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
   title,
   color = "indigo",
   bootCommand,
+  cwd,
   themeMode = "dark",
   onClose,
   onColorChange,
@@ -122,9 +124,11 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
             brightCyan: "#56d4dd",
             brightWhite: "#f0f6fc",
           },
-      fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+      fontFamily: 'ui-monospace, SFMono-Regular, "JetBrains Mono", "Fira Code", Menlo, Monaco, Consolas, monospace',
       fontSize: 13,
       lineHeight: 1.2,
+      fontWeight: "500",
+      fontWeightBold: "700",
     });
 
     const fitAddon = new FitAddon();
@@ -146,7 +150,19 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
       const rows = term.rows > 0 ? term.rows : 24;
       lastSizeRef.current = { cols, rows };
 
-      invoke("create_pty", { id, cols, rows })
+      listen<PtyOutputPayload>(`pty-output-${id}`, (event) => {
+        if (event.payload && event.payload.data) {
+          term.write(event.payload.data as string);
+        }
+      })
+        .then((unlistenFn) => {
+          if (isDisposed) {
+            unlistenFn();
+            return;
+          }
+          unlisten = unlistenFn;
+          return invoke("create_pty", { id, cols, rows, cwd: cwd || null });
+        })
         .then(() => {
           if (isDisposed) return;
           if (bootCommand) {
@@ -154,18 +170,10 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
               invoke("write_pty", { id, data: bootCommand + "\n" }).catch(() => {});
             }, 150);
           }
-          return listen<PtyOutputPayload>(`pty-output-${id}`, (event) => {
-            if (event.payload && event.payload.data) {
-              term.write(event.payload.data as string);
-            }
-          });
-        })
-        .then((unlistenFn) => {
-          if (unlistenFn) unlisten = unlistenFn;
         })
         .catch((err) => {
           if (!isDisposed) {
-            term.write(`\r\n\x1b[31m[Error starting PTY: ${err}]\x1b[0m\r\n`);
+            term.write(`\r\n\x1b[31m[Erro ao iniciar PTY: ${err}]\x1b[0m\r\n`);
           }
         });
     });
@@ -327,15 +335,6 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
         } border-b drag-handle cursor-move select-none transition-colors duration-200`}
       >
         <div className="flex items-center space-x-2">
-          {/* Indicador discreto de cor/categoria */}
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={handleCycleColor}
-            title="Clique para alternar cor do terminal"
-            className={`w-2.5 h-2.5 rounded-full ${theme.dot} hover:scale-125 transition-transform cursor-pointer`}
-          />
-
           {isEditingTitle ? (
             <input
               type="text"
