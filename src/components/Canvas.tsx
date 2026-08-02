@@ -542,19 +542,21 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
       <Tldraw
         shapeUtils={customShapeUtils}
         onMount={handleMount}
-        assetStore={{
-          async upload(_type, file) {
-            return new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = (e) => reject(e);
-              reader.readAsDataURL(file);
-            });
+        {...({
+          assetStore: {
+            async upload(_type: any, file: File) {
+              return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = (e) => reject(e);
+                reader.readAsDataURL(file);
+              });
+            },
+            async resolve(asset: any) {
+              return asset.props.src;
+            },
           },
-          async resolve(asset) {
-            return asset.props.src;
-          },
-        }}
+        } as any)}
       />
     </div>
   );
