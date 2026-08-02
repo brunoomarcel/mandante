@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import EmojiPicker, { Theme } from "emoji-picker-react";
 import { Canvas, CanvasHandle } from "./components/Canvas";
 import {
   Plus,
@@ -168,24 +169,16 @@ export const App: React.FC = () => {
   const [newWsName, setNewWsName] = useState("");
   const [newWsCwd, setNewWsCwd] = useState("");
   const [newWsEmoji, setNewWsEmoji] = useState("⚡");
-  const [newWsColor, setNewWsColor] = useState("indigo");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-  const EMOJI_OPTIONS = ["⚡", "♊", "🧠", "🌐", "💻", "🗄️", "🛠️", "🎯", "🔥", "⚙️", "🚀", "📦"];
-  const COLOR_OPTIONS = [
-    { id: "indigo", bg: "bg-indigo-500", text: "text-indigo-500" },
-    { id: "emerald", bg: "bg-emerald-500", text: "text-emerald-500" },
-    { id: "amber", bg: "bg-amber-500", text: "text-amber-500" },
-    { id: "rose", bg: "bg-rose-500", text: "text-rose-500" },
-    { id: "purple", bg: "bg-purple-500", text: "text-purple-500" },
-    { id: "blue", bg: "bg-blue-500", text: "text-blue-500" },
-  ];
+  const EMOJI_OPTIONS = ["⚡", "♊", "🧠", "🌐", "💻", "🗄️", "🛠️", "🎯", "🔥", "⚙️", "🚀", "📦", "🤖", "💬", "📂", "🎨"];
 
   const handleOpenModal = () => {
     setEditingWsId(null);
     setNewWsName(`Workspace ${(workspaces.length || 0) + 1}`);
     setNewWsCwd("");
     setNewWsEmoji("⚡");
-    setNewWsColor("indigo");
+    setShowEmojiPicker(false);
     setIsModalOpen(true);
   };
 
@@ -195,7 +188,7 @@ export const App: React.FC = () => {
     setNewWsName(ws.name);
     setNewWsCwd(ws.cwd || "");
     setNewWsEmoji(ws.emoji || "📁");
-    setNewWsColor(ws.color || "indigo");
+    setShowEmojiPicker(false);
     setIsModalOpen(true);
   };
 
@@ -218,9 +211,9 @@ export const App: React.FC = () => {
     if (e) e.preventDefault();
     if (canvasRef.current) {
       if (editingWsId) {
-        canvasRef.current.renameWorkspace(editingWsId, newWsName.trim(), newWsEmoji, newWsColor);
+        canvasRef.current.renameWorkspace(editingWsId, newWsName.trim(), newWsEmoji);
       } else {
-        canvasRef.current.createWorkspace(newWsName.trim(), newWsCwd.trim(), newWsEmoji, newWsColor);
+        canvasRef.current.createWorkspace(newWsName.trim(), newWsCwd.trim(), newWsEmoji);
       }
     }
     setIsModalOpen(false);
@@ -273,56 +266,56 @@ export const App: React.FC = () => {
               {workspaces
                 .filter((ws: any) => !((ws.name === "Page 1" || ws.name === "Página 1") && !ws.cwd))
                 .map((ws: any) => {
-                const isActive = ws.id === activeWorkspaceId;
-                return (
-                  <div
-                    key={ws.id}
-                    onClick={() => handleSwitchWorkspace(ws.id)}
-                    className={`group flex items-center justify-between px-2 py-1.5 text-xs font-medium ${isActive
-                      ? isLight
-                        ? "bg-slate-200/80 text-slate-900 font-semibold border-l-2 border-indigo-600"
-                        : "bg-[#21262d] text-white font-semibold border-l-2 border-indigo-500"
-                      : isLight
-                        ? "text-slate-600 hover:bg-slate-100"
-                        : "text-slate-400 hover:bg-[#21262d]/60"
-                      } rounded-md cursor-pointer transition-all`}
-                  >
-                    <span className="flex flex-col truncate min-w-0 pr-1">
-                      <span className="flex items-center gap-1.5 truncate">
-                        <span className="text-xs">{ws.emoji || "📁"}</span>
-                        <span className="truncate">{ws.name}</span>
-                      </span>
-                      {ws.cwd && (
-                        <span className="text-[9px] text-slate-400 truncate font-mono ml-5">
-                          {ws.cwd.split("/").pop() || ws.cwd}
+                  const isActive = ws.id === activeWorkspaceId;
+                  return (
+                    <div
+                      key={ws.id}
+                      onClick={() => handleSwitchWorkspace(ws.id)}
+                      className={`group flex items-center justify-between px-2 py-1.5 text-xs font-medium ${isActive
+                        ? isLight
+                          ? "bg-slate-200/80 text-slate-900 font-semibold border-l-2 border-indigo-600"
+                          : "bg-[#21262d] text-white font-semibold border-l-2 border-indigo-500"
+                        : isLight
+                          ? "text-slate-600 hover:bg-slate-100"
+                          : "text-slate-400 hover:bg-[#21262d]/60"
+                        } rounded-md cursor-pointer transition-all`}
+                    >
+                      <span className="flex flex-col truncate min-w-0 pr-1">
+                        <span className="flex items-center gap-1.5 truncate">
+                          <span className="text-xs">{ws.emoji || "📁"}</span>
+                          <span className="truncate">{ws.name}</span>
                         </span>
-                      )}
-                    </span>
-
-                    <div className="flex items-center space-x-1 shrink-0">
-                      <span className={`text-[10px] ${isLight ? "bg-slate-200 text-slate-700" : "bg-[#30363d] text-slate-300"} px-1.5 py-0.2 rounded-full font-mono`}>
-                        {ws.terminalCount}
+                        {ws.cwd && (
+                          <span className="text-[9px] text-slate-400 truncate font-mono ml-5">
+                            {ws.cwd.split("/").pop() || ws.cwd}
+                          </span>
+                        )}
                       </span>
-                      <button
-                        onClick={(e) => handleOpenEditModal(ws, e)}
-                        title="Editar / Renomear Workspace"
-                        className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-500 transition-opacity"
-                      >
-                        ✏️
-                      </button>
-                      {workspaces.length > 1 && (
+
+                      <div className="flex items-center space-x-1 shrink-0">
+                        <span className={`text-[10px] ${isLight ? "bg-slate-200 text-slate-700" : "bg-[#30363d] text-slate-300"} px-1.5 py-0.2 rounded-full font-mono`}>
+                          {ws.terminalCount}
+                        </span>
                         <button
-                          onClick={(e) => handleDeleteWorkspace(ws.id, e)}
-                          title="Excluir Workspace"
-                          className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-red-500 transition-opacity"
+                          onClick={(e) => handleOpenEditModal(ws, e)}
+                          title="Editar / Renomear Workspace"
+                          className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-500 transition-opacity"
                         >
-                          ✕
+                          ✏️
                         </button>
-                      )}
+                        {workspaces.length > 1 && (
+                          <button
+                            onClick={(e) => handleDeleteWorkspace(ws.id, e)}
+                            title="Excluir Workspace"
+                            className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-red-500 transition-opacity"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           </div>
         </div>
@@ -440,19 +433,43 @@ export const App: React.FC = () => {
                 />
               </div>
 
-              {/* Emoji & Cor */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+              {/* Emoji */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
                     Emoji / Ícone
                   </label>
-                  <div className={`flex flex-wrap gap-1 ${isLight ? "bg-slate-100 border-slate-200" : "bg-[#0d1117]/50 border-[#30363d]/50"} p-1.5 rounded-lg border`}>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker((prev) => !prev)}
+                    className="text-[11px] font-medium text-indigo-500 hover:text-indigo-400 flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <span>{showEmojiPicker ? "Ocultar Seletor Completo" : "Ver Todos"}</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div
+                    onClick={() => setShowEmojiPicker((prev) => !prev)}
+                    className={`w-10 h-10 rounded-xl border flex items-center justify-center text-xl cursor-pointer shrink-0 transition-transform hover:scale-105 shadow-sm ${isLight ? "bg-slate-100 border-slate-300" : "bg-[#0d1117] border-[#30363d]"
+                      }`}
+                    title="Clique para abrir todos os emojis do celular"
+                  >
+                    {newWsEmoji || "⚡"}
+                  </div>
+
+                  <div className={`flex-1 flex flex-wrap gap-1 ${isLight ? "bg-slate-100 border-slate-200" : "bg-[#0d1117]/50 border-[#30363d]/50"} p-1.5 rounded-xl border items-center`}>
                     {EMOJI_OPTIONS.map((emoji) => (
                       <button
                         key={emoji}
                         type="button"
-                        onClick={() => setNewWsEmoji(emoji)}
-                        className={`w-6 h-6 text-xs flex items-center justify-center rounded transition-colors ${newWsEmoji === emoji ? "bg-indigo-600 text-white" : "hover:bg-slate-300 dark:hover:bg-slate-700/50"}`}
+                        onClick={() => {
+                          setNewWsEmoji(emoji);
+                        }}
+                        className={`w-7 h-7 text-sm flex items-center justify-center rounded-lg transition-all ${newWsEmoji === emoji
+                            ? "bg-indigo-600 text-white scale-110 shadow-sm"
+                            : "hover:bg-slate-300 dark:hover:bg-slate-700/50"
+                          }`}
                       >
                         {emoji}
                       </button>
@@ -460,21 +477,21 @@ export const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                    Cor Tema
-                  </label>
-                  <div className="flex items-center gap-2 pt-1.5">
-                    {COLOR_OPTIONS.map((col) => (
-                      <button
-                        key={col.id}
-                        type="button"
-                        onClick={() => setNewWsColor(col.id)}
-                        className={`w-6 h-6 rounded-full ${col.bg} transition-transform ${newWsColor === col.id ? "ring-2 ring-indigo-500 scale-110" : "hover:scale-105 opacity-80"}`}
-                      />
-                    ))}
+                {showEmojiPicker && (
+                  <div className="mt-2.5 rounded-xl overflow-hidden border border-slate-200 dark:border-[#30363d] shadow-2xl animate-in fade-in duration-150">
+                    <EmojiPicker
+                      onEmojiClick={(emojiData) => {
+                        setNewWsEmoji(emojiData.emoji);
+                        setShowEmojiPicker(false);
+                      }}
+                      theme={isLight ? Theme.LIGHT : Theme.DARK}
+                      searchPlaceHolder="Buscar emoji (ex: fogo, dev, gato...)"
+                      width="100%"
+                      height={320}
+                      previewConfig={{ showPreview: false }}
+                    />
                   </div>
-                </div>
+                )}
               </div>
 
 
@@ -495,9 +512,8 @@ export const App: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleSelectFolder}
-                    className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-medium transition-colors cursor-pointer shrink-0 ${
-                      isLight ? "bg-white border-slate-300 text-slate-700 hover:bg-slate-50" : "bg-[#21262d] border-[#30363d] text-slate-200 hover:bg-[#30363d]"
-                    }`}
+                    className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-medium transition-colors cursor-pointer shrink-0 ${isLight ? "bg-white border-slate-300 text-slate-700 hover:bg-slate-50" : "bg-[#21262d] border-[#30363d] text-slate-200 hover:bg-[#30363d]"
+                      }`}
                   >
                     <Folder className="w-3.5 h-3.5 text-slate-500" />
                     <span>Buscar</span>
@@ -550,9 +566,8 @@ export const App: React.FC = () => {
             <div className="space-y-2">
               <button
                 onClick={() => handleSelectTerminalType("empty")}
-                className={`w-full p-2.5 rounded-lg border text-left flex items-center gap-3 transition-all cursor-pointer ${
-                  isLight ? "border-slate-200 hover:bg-slate-50 text-slate-800" : "border-[#30363d] hover:bg-[#21262d] text-slate-100"
-                }`}
+                className={`w-full p-2.5 rounded-lg border text-left flex items-center gap-3 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-slate-50 text-slate-800" : "border-[#30363d] hover:bg-[#21262d] text-slate-100"
+                  }`}
               >
                 <div className="w-8 h-8 rounded-lg bg-blue-600/10 text-blue-500 flex items-center justify-center font-bold text-sm shrink-0">
                   💻
@@ -570,9 +585,8 @@ export const App: React.FC = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => handleSelectTerminalType("gemini")}
-                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
-                      isLight ? "border-slate-200 hover:bg-indigo-50 text-slate-800" : "border-[#30363d] hover:bg-indigo-950/40 text-slate-100"
-                    }`}
+                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-indigo-50 text-slate-800" : "border-[#30363d] hover:bg-indigo-950/40 text-slate-100"
+                      }`}
                   >
                     <span className="text-base">♊</span>
                     <div>
@@ -583,9 +597,8 @@ export const App: React.FC = () => {
 
                   <button
                     onClick={() => handleSelectTerminalType("claude")}
-                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
-                      isLight ? "border-slate-200 hover:bg-amber-50 text-slate-800" : "border-[#30363d] hover:bg-amber-950/40 text-slate-100"
-                    }`}
+                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-amber-50 text-slate-800" : "border-[#30363d] hover:bg-amber-950/40 text-slate-100"
+                      }`}
                   >
                     <span className="text-base">🧠</span>
                     <div>
@@ -596,9 +609,8 @@ export const App: React.FC = () => {
 
                   <button
                     onClick={() => handleSelectTerminalType("opencode")}
-                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
-                      isLight ? "border-slate-200 hover:bg-emerald-50 text-slate-800" : "border-[#30363d] hover:bg-emerald-950/40 text-slate-100"
-                    }`}
+                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-emerald-50 text-slate-800" : "border-[#30363d] hover:bg-emerald-950/40 text-slate-100"
+                      }`}
                   >
                     <span className="text-base">🌐</span>
                     <div>
@@ -609,9 +621,8 @@ export const App: React.FC = () => {
 
                   <button
                     onClick={() => handleSelectTerminalType("aider")}
-                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
-                      isLight ? "border-slate-200 hover:bg-rose-50 text-slate-800" : "border-[#30363d] hover:bg-rose-950/40 text-slate-100"
-                    }`}
+                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${isLight ? "border-slate-200 hover:bg-rose-50 text-slate-800" : "border-[#30363d] hover:bg-rose-950/40 text-slate-100"
+                      }`}
                   >
                     <span className="text-base">⚡</span>
                     <div>

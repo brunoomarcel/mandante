@@ -103,7 +103,6 @@ export interface WorkspaceItem {
   terminalCount: number;
   cwd?: string;
   emoji?: string;
-  color?: string;
 }
 
 export interface CanvasHandle {
@@ -116,8 +115,8 @@ export interface CanvasHandle {
   getWorkspaces: () => WorkspaceItem[];
   getActiveWorkspaceId: () => string;
   switchWorkspace: (pageId: string) => void;
-  createWorkspace: (name?: string, cwd?: string, emoji?: string, color?: string) => string | undefined;
-  renameWorkspace: (pageId: string, newName: string, emoji?: string, color?: string) => void;
+  createWorkspace: (name?: string, cwd?: string, emoji?: string) => string | undefined;
+  renameWorkspace: (pageId: string, newName: string, emoji?: string) => void;
   deleteWorkspace: (pageId: string) => void;
 }
 
@@ -425,7 +424,6 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
 
   const pageCwdMap = useRef<Record<string, string>>({});
   const pageEmojiMap = useRef<Record<string, string>>({});
-  const pageColorMap = useRef<Record<string, string>>({});
 
   const getWorkspaces = useCallback((): WorkspaceItem[] => {
     if (!editorRef.current) return [];
@@ -453,7 +451,6 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
           terminalCount,
           cwd: pageCwdMap.current[page.id] || "",
           emoji: pageEmojiMap.current[page.id] || "📁",
-          color: pageColorMap.current[page.id] || "indigo",
         };
       });
   }, []);
@@ -468,7 +465,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     editorRef.current.setCurrentPage(pageId as any);
   }, []);
 
-  const createWorkspace = useCallback((name?: string, cwd?: string, emoji?: string, color?: string) => {
+  const createWorkspace = useCallback((name?: string, cwd?: string, emoji?: string) => {
     if (!editorRef.current) return;
     const editor = editorRef.current;
     const pages = editor.getPages();
@@ -488,18 +485,16 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
 
     if (cwd) pageCwdMap.current[targetPageId] = cwd;
     if (emoji) pageEmojiMap.current[targetPageId] = emoji;
-    if (color) pageColorMap.current[targetPageId] = color;
 
     editor.setCurrentPage(targetPageId as any);
     return targetPageId;
   }, []);
 
-  const renameWorkspace = useCallback((pageId: string, newName: string, emoji?: string, color?: string) => {
+  const renameWorkspace = useCallback((pageId: string, newName: string, emoji?: string) => {
     if (!editorRef.current) return;
     const editor = editorRef.current;
     editor.renamePage(pageId as any, newName);
     if (emoji) pageEmojiMap.current[pageId] = emoji;
-    if (color) pageColorMap.current[pageId] = color;
   }, []);
 
   const deleteWorkspace = useCallback((pageId: string) => {
