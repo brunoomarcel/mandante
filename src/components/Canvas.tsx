@@ -22,6 +22,7 @@ export type ITerminalShape = TLBaseShape<
     title: string;
     color?: TerminalThemeColor;
     bootCommand?: string;
+    agentType?: string;
     cwd?: string;
   }
 >;
@@ -106,7 +107,7 @@ export interface WorkspaceItem {
 }
 
 export interface CanvasHandle {
-  addTerminalNode: (title?: string, customX?: number, customY?: number, customCwd?: string) => void;
+  addTerminalNode: (title?: string, customX?: number, customY?: number, customCwd?: string, bootCommand?: string, agentType?: string) => void;
   loadPreset: (presetType: "fullstack" | "grid") => void;
   broadcastCommand: (command: string) => void;
   clearCanvas: () => void;
@@ -149,7 +150,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
   }, [themeMode]);
 
   const addTerminalNode = useCallback(
-    (title?: string, customX?: number, customY?: number, customCwd?: string) => {
+    (title?: string, customX?: number, customY?: number, customCwd?: string, bootCommand?: string, agentType?: string) => {
       if (!editorRef.current) return;
 
       const editor = editorRef.current;
@@ -173,6 +174,8 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
           terminalId: id,
           title: title || `Terminal (${id.slice(5)})`,
           cwd,
+          bootCommand: bootCommand || "",
+          agentType: agentType || "shell",
         },
       });
     },

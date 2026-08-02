@@ -376,6 +376,33 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
         </div>
 
         <div className="flex items-center space-x-1">
+          {/* Seletor Rápido de Agente de IA no Terminal */}
+          <div className="relative">
+            <select
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                const cmd = e.target.value;
+                if (cmd) {
+                  invoke("write_pty", { id, data: cmd + "\n" }).catch(() => {});
+                  e.target.value = "";
+                }
+              }}
+              defaultValue=""
+              className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold focus:outline-none cursor-pointer ${
+                isLight ? "bg-white border-slate-300 text-slate-700 hover:bg-slate-50" : "bg-[#0d1117] border-[#30363d] text-slate-300 hover:bg-[#161b22]"
+              }`}
+              title="Lançar Agente de IA neste Terminal"
+            >
+              <option value="" disabled>🤖 Agente IA</option>
+              <option value="npx -y @google/gemini-cli">♊ Gemini CLI</option>
+              <option value="claude">🧠 Claude Code</option>
+              <option value="opencode">🌐 OpenCode</option>
+              <option value="codex">💻 Codex CLI</option>
+              <option value="aider">⚡ Aider AI</option>
+            </select>
+          </div>
+
           <button
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}

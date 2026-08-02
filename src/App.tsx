@@ -85,14 +85,34 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleAddTerminal = () => {
-    // Se não houver nenhum workspace criado/configurado pelo usuário, obriga a abrir o modal primeiro
+  const [isTerminalPickerOpen, setIsTerminalPickerOpen] = useState(false);
+
+  const handleAddTerminalClick = () => {
+    // Se não houver nenhum workspace criado/configurado pelo usuário, obriga a abrir o modal de workspace primeiro
     const userWorkspaces = workspaces.filter((ws: any) => !((ws.name === "Page 1" || ws.name === "Página 1") && !ws.cwd));
     if (userWorkspaces.length === 0) {
       handleOpenModal();
       return;
     }
-    canvasRef.current?.addTerminalNode();
+    setIsTerminalPickerOpen(true);
+  };
+
+  const handleSelectTerminalType = (type: "empty" | "gemini" | "claude" | "opencode" | "codex" | "aider") => {
+    setIsTerminalPickerOpen(false);
+    if (type === "empty") {
+      canvasRef.current?.addTerminalNode();
+    } else if (type === "gemini") {
+      canvasRef.current?.addTerminalNode("♊ Gemini Agent", undefined, undefined, undefined, "npx -y @google/gemini-cli", "gemini");
+    } else if (type === "claude") {
+      canvasRef.current?.addTerminalNode("🧠 Claude Code", undefined, undefined, undefined, "claude", "claude");
+    } else if (type === "opencode") {
+      canvasRef.current?.addTerminalNode("🌐 OpenCode Agent", undefined, undefined, undefined, "opencode", "opencode");
+    } else if (type === "codex") {
+      canvasRef.current?.addTerminalNode("💻 Codex CLI", undefined, undefined, undefined, "codex", "codex");
+    } else if (type === "aider") {
+      canvasRef.current?.addTerminalNode("⚡ Aider AI", undefined, undefined, undefined, "aider", "aider");
+    }
+    refreshWorkspaces();
   };
 
   const handleLoadFullstack = () => {
@@ -150,7 +170,7 @@ export const App: React.FC = () => {
   const [newWsEmoji, setNewWsEmoji] = useState("⚡");
   const [newWsColor, setNewWsColor] = useState("indigo");
 
-  const EMOJI_OPTIONS = ["⚡", "🚀", "💻", "🗄️", "🛠️", "🎯", "🔥", "⚙️", "🌐", "📦"];
+  const EMOJI_OPTIONS = ["⚡", "♊", "🧠", "🌐", "💻", "🗄️", "🛠️", "🎯", "🔥", "⚙️", "🚀", "📦"];
   const COLOR_OPTIONS = [
     { id: "indigo", bg: "bg-indigo-500", text: "text-indigo-500" },
     { id: "emerald", bg: "bg-emerald-500", text: "text-emerald-500" },
@@ -357,11 +377,10 @@ export const App: React.FC = () => {
             </button>
           </form>
 
+
+
           <button
-            onClick={() => {
-              handleAddTerminal();
-              refreshWorkspaces();
-            }}
+            onClick={handleAddTerminalClick}
             className="bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs px-2.5 py-1 rounded-full flex items-center gap-1 transition-colors shadow-sm cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -427,13 +446,13 @@ export const App: React.FC = () => {
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
                     Emoji / Ícone
                   </label>
-                  <div className="flex flex-wrap gap-1 bg-[#0d1117]/50 p-1.5 rounded-lg border border-[#30363d]/50">
+                  <div className={`flex flex-wrap gap-1 ${isLight ? "bg-slate-100 border-slate-200" : "bg-[#0d1117]/50 border-[#30363d]/50"} p-1.5 rounded-lg border`}>
                     {EMOJI_OPTIONS.map((emoji) => (
                       <button
                         key={emoji}
                         type="button"
                         onClick={() => setNewWsEmoji(emoji)}
-                        className={`w-6 h-6 text-xs flex items-center justify-center rounded ${newWsEmoji === emoji ? "bg-indigo-600 text-white" : "hover:bg-slate-700/50"}`}
+                        className={`w-6 h-6 text-xs flex items-center justify-center rounded transition-colors ${newWsEmoji === emoji ? "bg-indigo-600 text-white" : "hover:bg-slate-300 dark:hover:bg-slate-700/50"}`}
                       >
                         {emoji}
                       </button>
@@ -451,12 +470,14 @@ export const App: React.FC = () => {
                         key={col.id}
                         type="button"
                         onClick={() => setNewWsColor(col.id)}
-                        className={`w-6 h-6 rounded-full ${col.bg} transition-transform ${newWsColor === col.id ? "ring-2 ring-white scale-110" : "hover:scale-105 opacity-80"}`}
+                        className={`w-6 h-6 rounded-full ${col.bg} transition-transform ${newWsColor === col.id ? "ring-2 ring-indigo-500 scale-110" : "hover:scale-105 opacity-80"}`}
                       />
                     ))}
                   </div>
                 </div>
               </div>
+
+
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
@@ -506,6 +527,101 @@ export const App: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Pop-up Modal de Escolha do Tipo de Terminal / Agente */}
+      {isTerminalPickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+          <div className={`w-full max-w-sm ${isLight ? "bg-white text-slate-800 border-slate-200" : "bg-[#161b22] text-slate-100 border-[#30363d]"} border rounded-xl shadow-2xl p-4 overflow-hidden`}>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-[#30363d] mb-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Criar Novo Terminal
+              </h3>
+              <button
+                onClick={() => setIsTerminalPickerOpen(false)}
+                className="text-slate-400 hover:text-slate-200 text-xs px-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => handleSelectTerminalType("empty")}
+                className={`w-full p-2.5 rounded-lg border text-left flex items-center gap-3 transition-all cursor-pointer ${
+                  isLight ? "border-slate-200 hover:bg-slate-50 text-slate-800" : "border-[#30363d] hover:bg-[#21262d] text-slate-100"
+                }`}
+              >
+                <div className="w-8 h-8 rounded-lg bg-blue-600/10 text-blue-500 flex items-center justify-center font-bold text-sm shrink-0">
+                  💻
+                </div>
+                <div>
+                  <div className="text-xs font-bold">Terminal Vazio</div>
+                  <div className="text-[10px] text-slate-400">Shell padrão do sistema no repositório</div>
+                </div>
+              </button>
+
+              <div className="pt-2">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5 px-1">
+                  Ou Iniciar com Agente de IA
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleSelectTerminalType("gemini")}
+                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                      isLight ? "border-slate-200 hover:bg-indigo-50 text-slate-800" : "border-[#30363d] hover:bg-indigo-950/40 text-slate-100"
+                    }`}
+                  >
+                    <span className="text-base">♊</span>
+                    <div>
+                      <div className="text-xs font-bold">Gemini CLI</div>
+                      <div className="text-[9px] text-slate-400">Google DeepMind</div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleSelectTerminalType("claude")}
+                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                      isLight ? "border-slate-200 hover:bg-amber-50 text-slate-800" : "border-[#30363d] hover:bg-amber-950/40 text-slate-100"
+                    }`}
+                  >
+                    <span className="text-base">🧠</span>
+                    <div>
+                      <div className="text-xs font-bold">Claude Code</div>
+                      <div className="text-[9px] text-slate-400">Anthropic CLI</div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleSelectTerminalType("opencode")}
+                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                      isLight ? "border-slate-200 hover:bg-emerald-50 text-slate-800" : "border-[#30363d] hover:bg-emerald-950/40 text-slate-100"
+                    }`}
+                  >
+                    <span className="text-base">🌐</span>
+                    <div>
+                      <div className="text-xs font-bold">OpenCode</div>
+                      <div className="text-[9px] text-slate-400">Codex / LLM</div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleSelectTerminalType("aider")}
+                    className={`p-2 rounded-lg border text-left flex items-center gap-2 transition-all cursor-pointer ${
+                      isLight ? "border-slate-200 hover:bg-rose-50 text-slate-800" : "border-[#30363d] hover:bg-rose-950/40 text-slate-100"
+                    }`}
+                  >
+                    <span className="text-base">⚡</span>
+                    <div>
+                      <div className="text-xs font-bold">Aider AI</div>
+                      <div className="text-[9px] text-slate-400">Pair Programmer</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
