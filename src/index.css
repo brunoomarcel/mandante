@@ -16,22 +16,22 @@ html, body, #root {
 /* =========================================================
    ESTILOS PERMANENTES DA UI EXTERNA
    ========================================================= */
-.xterm {
-  padding: 8px;
-}
-
-/* Melhorar nitidez de texto e evitar subpixel blur no Canvas/xterm */
-body, .xterm, canvas {
+/* Melhorar nitidez de texto e ícones SVG */
+body, #root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  image-rendering: -webkit-optimize-contrast;
+  text-rendering: optimizeSpeed;
 }
 
-/* Forçar transformações CSS 3D sem blur no tldraw HTMLContainer */
-.tl-container, .tl-html-container {
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
+/* Evitar turvamento em ícones vetoriais SVG */
+svg {
+  shape-rendering: geometricPrecision;
+  text-rendering: geometricPrecision;
+  image-rendering: pixelated;
+}
+
+.xterm {
+  padding: 8px;
 }
 
 /* =========================================================
