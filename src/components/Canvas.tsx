@@ -478,8 +478,32 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     });
   }, []);
 
-  const pageCwdMap = useRef<Record<string, string>>({});
-  const pageEmojiMap = useRef<Record<string, string>>({});
+  const pageCwdMap = useRef<Record<string, string>>((() => {
+    try {
+      const saved = localStorage.getItem("mandante_page_cwd_map");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  })());
+
+  const pageEmojiMap = useRef<Record<string, string>>((() => {
+    try {
+      const saved = localStorage.getItem("mandante_page_emoji_map");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  })());
+
+  const saveWorkspaceMetadata = useCallback(() => {
+    try {
+      localStorage.setItem("mandante_page_cwd_map", JSON.stringify(pageCwdMap.current));
+      localStorage.setItem("mandante_page_emoji_map", JSON.stringify(pageEmojiMap.current));
+    } catch (err) {
+      console.error("Erro ao salvar metadados dos workspaces:", err);
+    }
+  }, []);
 
   const getWorkspaces = useCallback((): WorkspaceItem[] => {
     if (!editorRef.current) return [];
@@ -542,24 +566,29 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     if (cwd) pageCwdMap.current[targetPageId] = cwd;
     if (emoji) pageEmojiMap.current[targetPageId] = emoji;
 
+    saveWorkspaceMetadata();
     editor.setCurrentPage(targetPageId as any);
     return targetPageId;
-  }, []);
+  }, [saveWorkspaceMetadata]);
 
   const renameWorkspace = useCallback((pageId: string, newName: string, emoji?: string) => {
     if (!editorRef.current) return;
     const editor = editorRef.current;
     editor.renamePage(pageId as any, newName);
     if (emoji) pageEmojiMap.current[pageId] = emoji;
-  }, []);
+    saveWorkspaceMetadata();
+  }, [saveWorkspaceMetadata]);
 
   const deleteWorkspace = useCallback((pageId: string) => {
     if (!editorRef.current) return;
     const editor = editorRef.current;
     if (editor.getPages().length > 1) {
+      delete pageCwdMap.current[pageId];
+      delete pageEmojiMap.current[pageId];
+      saveWorkspaceMetadata();
       editor.deletePage(pageId as any);
     }
-  }, []);
+  }, [saveWorkspaceMetadata]);
 
   const getFocalPoint = useCallback((editor: Editor) => {
     // 1. Se houver elementos selecionados, foca no centro da seleção
@@ -697,6 +726,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
         }
       `}</style>
       <Tldraw
+        persistenceKey="mandante_spatial_orchestrator"
         embeds={customEmbeds}
         shapeUtils={customShapeUtils}
         onMount={handleMount}
