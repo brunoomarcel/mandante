@@ -9,6 +9,7 @@ export type TerminalThemeColor = "indigo" | "emerald" | "amber" | "rose" | "purp
 interface TerminalNodeProps {
   id: string;
   title?: string;
+  agentType?: string;
   color?: TerminalThemeColor;
   bootCommand?: string;
   cwd?: string;
@@ -34,6 +35,7 @@ const COLOR_THEMES: Record<TerminalThemeColor, { dot: string; border: string; he
 export const TerminalNode: React.FC<TerminalNodeProps> = ({
   id,
   title,
+  agentType,
   color = "indigo",
   bootCommand,
   cwd,
@@ -161,7 +163,14 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
             return;
           }
           unlisten = unlistenFn;
-          return invoke("create_pty", { id, cols, rows, cwd: cwd || null });
+          return invoke("create_pty", {
+            id,
+            title: title || `Terminal ${id}`,
+            agentType: agentType || "shell",
+            cols,
+            rows,
+            cwd: cwd || null,
+          });
         })
         .then(() => {
           if (isDisposed) return;

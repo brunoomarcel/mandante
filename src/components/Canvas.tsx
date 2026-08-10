@@ -64,6 +64,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
         <TerminalNode
           id={shape.props.terminalId}
           title={shape.props.title}
+          agentType={shape.props.agentType}
           color={shape.props.color || "indigo"}
           bootCommand={shape.props.bootCommand}
           cwd={shape.props.cwd}

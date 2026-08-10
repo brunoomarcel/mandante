@@ -139,6 +139,26 @@ export const App: React.FC = () => {
   }, [themeMode]);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [meshInfo, setMeshInfo] = useState<{ port: number; count: number; terminals: any[] } | null>(null);
+  const [isMeshModalOpen, setIsMeshModalOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchMeshStatus = async () => {
+      try {
+        const status: any = await invoke("get_mesh_status");
+        setMeshInfo({
+          port: status.mesh_port,
+          count: status.active_terminals_count,
+          terminals: status.terminals || [],
+        });
+      } catch {
+        // fallback
+      }
+    };
+    fetchMeshStatus();
+    const timer = setInterval(fetchMeshStatus, 3000);
+    return () => clearInterval(timer);
+  }, []);
 
   const toggleTheme = () => {
     setThemeMode((prev) => {
@@ -599,6 +619,19 @@ export const App: React.FC = () => {
               <Boxes className="w-3.5 h-3.5 text-slate-400" />
               <span>Grid 2x2</span>
             </button>
+
+            <button
+              onClick={() => setIsMeshModalOpen(true)}
+              title="Rede Mandante Mesh IPC ativa. Clique para ver detalhes e CLI."
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                isLight
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                  : "border-emerald-900/60 bg-emerald-950/40 text-emerald-300 hover:bg-emerald-900/50"
+              }`}
+            >
+              <Globe className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+              <span>Mesh: {meshInfo ? `Port ${meshInfo.port}` : "Ativo"}</span>
+            </button>
           </div>
         </div>
 
@@ -987,6 +1020,91 @@ export const App: React.FC = () => {
                 }`}
               >
                 Continuar mesmo assim
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mandante Mesh Status & Inter-Terminal CLI Modal */}
+      {isMeshModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className={`w-full max-w-xl rounded-2xl border shadow-2xl overflow-hidden ${
+            effectiveCanvasTheme === "light" ? "bg-white border-slate-200 text-slate-800" : "bg-[#161b22] border-[#30363d] text-slate-100"
+          }`}>
+            <div className={`flex items-center justify-between px-5 py-4 border-b ${
+              effectiveCanvasTheme === "light" ? "border-slate-100 bg-slate-50" : "border-[#30363d] bg-[#0d1117]"
+            }`}>
+              <div className="flex items-center gap-2.5">
+                <Globe className="w-5 h-5 text-emerald-500" />
+                <div>
+                  <h3 className="font-semibold text-sm">Mandante Mesh Network (IPC)</h3>
+                  <p className="text-xs text-slate-400">Barramento Inter-Processos e Orquestrador Multi-Agentes</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsMeshModalOpen(false)}
+                className={`p-1.5 rounded-lg text-slate-400 hover:text-slate-200 ${effectiveCanvasTheme === "light" ? "hover:bg-slate-200" : "hover:bg-[#21262d]"}`}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className={`p-3 rounded-xl border flex items-center justify-between ${
+                effectiveCanvasTheme === "light" ? "bg-emerald-50 border-emerald-200 text-emerald-900" : "bg-emerald-950/40 border-emerald-800 text-emerald-200"
+              }`}>
+                <div>
+                  <div className="font-semibold">Servidor IPC Local Ativo</div>
+                  <div className="text-[11px] opacity-80">Porta HTTP: http://127.0.0.1:{meshInfo?.port || 41731}</div>
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold">{meshInfo?.count || 0} Terminais Conectados</div>
+                  <div className="text-[10px] text-emerald-400">Skill `mandante-mesh` instalada no AGY</div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-slate-300 mb-2">Comandos da CLI do Mandante (Disponíveis em qualquer terminal):</h4>
+                <div className={`p-3 rounded-xl font-mono text-[11px] space-y-1.5 ${
+                  effectiveCanvasTheme === "light" ? "bg-slate-100 text-slate-800" : "bg-[#0d1117] text-slate-200 border border-[#30363d]"
+                }`}>
+                  <div><span className="text-indigo-400">mandante list</span> <span className="text-slate-500"># Lista sessões e IDs abertos</span></div>
+                  <div><span className="text-indigo-400">mandante read &lt;id&gt;</span> <span className="text-slate-500"># Lê o histórico/transcrição da sessão</span></div>
+                  <div><span className="text-indigo-400">mandante ask &lt;id&gt; &quot;&lt;prompt&gt;&quot;</span> <span className="text-slate-500"># Fala com o agente no terminal e aguarda resposta</span></div>
+                  <div><span className="text-indigo-400">mandante send &lt;id&gt; &quot;&lt;comando&gt;&quot;</span> <span className="text-slate-500"># Envia comando bruto ao terminal</span></div>
+                </div>
+              </div>
+
+              {meshInfo && meshInfo.terminals && meshInfo.terminals.length > 0 && (
+                <div>
+                  <h4 className="font-semibold text-slate-300 mb-2">Terminais Ativos Conectados:</h4>
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                    {meshInfo.terminals.map((t: any) => (
+                      <div key={t.id} className={`p-2.5 rounded-lg border flex items-center justify-between ${
+                        effectiveCanvasTheme === "light" ? "bg-slate-50 border-slate-200" : "bg-[#21262d] border-[#30363d]"
+                      }`}>
+                        <div>
+                          <span className="font-mono text-indigo-400 font-semibold mr-2">[{t.id}]</span>
+                          <span className="font-medium">{t.title}</span>
+                          <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300">{t.agent_type}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono truncate max-w-[150px]">
+                          {t.cwd || 'N/A'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className={`px-5 py-3 border-t flex justify-end ${effectiveCanvasTheme === "light" ? "border-slate-100 bg-slate-50" : "border-[#30363d] bg-[#0d1117]"}`}>
+              <button
+                onClick={() => setIsMeshModalOpen(false)}
+                className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition-colors"
+              >
+                Fechar
               </button>
             </div>
           </div>
