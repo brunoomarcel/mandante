@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { Editor } from "@tldraw/tldraw";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -61,6 +62,27 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
   const [connections, setConnections] = useState<RopeConnection[]>([]);
   const connectionsRef = useRef<RopeConnection[]>([]);
   connectionsRef.current = connections;
+
+  // Sync visual connections to Rust backend whenever rope connections change topology
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const pairs: [string, string][] = [];
+    for (const c of connections) {
+      const fromShape = editor.getShape(c.fromShapeId as any) as any;
+      const toShape = editor.getShape(c.toShapeId as any) as any;
+      const fromTermId = fromShape?.props?.terminalId;
+      const toTermId = toShape?.props?.terminalId;
+      if (fromTermId && toTermId) {
+        pairs.push([fromTermId, toTermId]);
+      }
+    }
+
+    invoke("update_connections", { connections: pairs }).catch(err => {
+      console.error("[Mandante Rope] Failed to update backend connections:", err);
+    });
+  }, [connections, editorRef]);
 
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);

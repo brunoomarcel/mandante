@@ -86,6 +86,15 @@ fn read_text_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn update_connections(
+    connections: Vec<(String, String)>,
+    state: State<'_, PtyManager>,
+) -> Result<(), String> {
+    state.set_connections(connections);
+    Ok(())
+}
+
+#[tauri::command]
 fn check_agent_installed(command: String) -> bool {
     #[cfg(target_os = "windows")]
     let result = std::process::Command::new("where")
@@ -131,6 +140,7 @@ pub fn run() {
             get_mesh_status,
             get_terminal_transcript,
             update_terminal_metadata,
+            update_connections,
             write_text_file,
             read_text_file,
             check_agent_installed

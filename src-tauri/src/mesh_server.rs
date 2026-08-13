@@ -78,9 +78,17 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
     let path = path_and_query[0];
     let query_str = path_and_query.get(1).copied().unwrap_or("");
 
+    let caller_id = get_header(raw_req, "X-Mandante-Terminal-ID");
+
     // Parse body for POST requests
     let body = if method == "POST" {
-        raw_req.split("\r\n\r\n").nth(1).unwrap_or("").trim()
+        if let Some(pos) = raw_req.find("\r\n\r\n") {
+            &raw_req[pos + 4..]
+        } else if let Some(pos) = raw_req.find("\n\n") {
+            &raw_req[pos + 2..]
+        } else {
+            ""
+        }
     } else {
         ""
     };
@@ -104,6 +112,11 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
 
     if method == "GET" && path == "/api/terminals" {
         let sessions = pm.list_sessions();
+        if let Some(ref caller) = caller_id {
+            let neighbors = pm.get_neighbors(caller);
+            let filtered: Vec<_> = sessions.into_iter().filter(|s| neighbors.contains(&s.id)).collect();
+            return build_response(200, "OK", &json!(filtered));
+        }
         return build_response(200, "OK", &json!(sessions));
     }
 
@@ -111,6 +124,17 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
         let parts: Vec<&str> = path.split('/').collect();
         if parts.len() == 5 {
             let id = parts[3];
+            if let Some(ref caller) = caller_id {
+                if caller != id && !pm.get_neighbors(caller).contains(&id.to_string()) {
+                    return build_response(
+                        403,
+                        "Forbidden",
+                        &json!({
+                            "error": format!("Terminal [{}] não está conectado visualmente via cordinha ao terminal [{}]", caller, id)
+                        }),
+                    );
+                }
+            }
             let max_lines = parse_query_param(query_str, "max_lines").and_then(|v| v.parse::<usize>().ok());
             match pm.get_transcript(id, max_lines, true) {
                 Ok((metadata, transcript)) => {
@@ -135,7 +159,18 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
         let parts: Vec<&str> = path.split('/').collect();
         if parts.len() == 5 {
             let id = parts[3];
-            if let Ok(json_body) = serde_json::from_str::<serde_json::Value>(body) {
+            if let Some(ref caller) = caller_id {
+                if caller != id && !pm.get_neighbors(caller).contains(&id.to_string()) {
+                    return build_response(
+                        403,
+                        "Forbidden",
+                        &json!({
+                            "error": format!("Terminal [{}] não está conectado visualmente via cordinha ao terminal [{}]", caller, id)
+                        }),
+                    );
+                }
+            }
+            if let Some(json_body) = parse_json_body(body) {
                 let text = json_body
                     .get("text")
                     .or_else(|| json_body.get("data"))
@@ -156,7 +191,18 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
         let parts: Vec<&str> = path.split('/').collect();
         if parts.len() == 5 {
             let id = parts[3];
-            if let Ok(json_body) = serde_json::from_str::<serde_json::Value>(body) {
+            if let Some(ref caller) = caller_id {
+                if caller != id && !pm.get_neighbors(caller).contains(&id.to_string()) {
+                    return build_response(
+                        403,
+                        "Forbidden",
+                        &json!({
+                            "error": format!("Terminal [{}] não está conectado visualmente via cordinha ao terminal [{}]", caller, id)
+                        }),
+                    );
+                }
+            }
+            if let Some(json_body) = parse_json_body(body) {
                 let prompt = json_body.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
                 let timeout_secs = json_body
                     .get("timeout_secs")
@@ -184,16 +230,22 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
     }
 
     if method == "POST" && path == "/api/broadcast" {
-        if let Ok(json_body) = serde_json::from_str::<serde_json::Value>(body) {
+        if let Some(json_body) = parse_json_body(body) {
             let text = json_body
                 .get("text")
                 .or_else(|| json_body.get("data"))
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             if !text.is_empty() {
-                match pm.broadcast(text) {
-                    Ok(_) => return build_response(200, "OK", &json!({"status": "broadcasted"})),
-                    Err(e) => return build_response(500, "Internal Error", &json!({"error": e})),
+                let res = if let Some(ref caller) = caller_id {
+                    pm.broadcast_to_neighbors(caller, text)
+                        .map(|sent| json!({"status": "broadcasted", "sent_to": sent}))
+                } else {
+                    pm.broadcast(text).map(|_| json!({"status": "broadcasted"}))
+                };
+                match res {
+                    Ok(payload) => return build_response(200, "OK", &payload),
+                    Err(e) => return build_response(400, "Bad Request", &json!({"error": e})),
                 }
             }
         }
@@ -201,6 +253,35 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
     }
 
     build_response(404, "Not Found", &json!({"error": "Endpoint not found"}))
+}
+
+fn parse_json_body(body: &str) -> Option<serde_json::Value> {
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(body) {
+        return Some(v);
+    }
+    if let (Some(start), Some(end)) = (body.find('{'), body.rfind('}')) {
+        if start < end {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body[start..=end]) {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+fn get_header(raw_req: &str, header_name: &str) -> Option<String> {
+    let target = header_name.to_lowercase();
+    for line in raw_req.lines() {
+        if let Some((key, val)) = line.split_once(':') {
+            if key.trim().to_lowercase() == target {
+                let v = val.trim();
+                if !v.is_empty() {
+                    return Some(v.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 fn parse_query_param(query: &str, param: &str) -> Option<String> {

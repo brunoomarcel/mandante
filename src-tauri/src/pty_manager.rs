@@ -390,6 +390,29 @@ impl PtyManager {
         Ok(())
     }
 
+    pub fn broadcast_to_neighbors(&self, caller_id: &str, data: &str) -> Result<Vec<String>, String> {
+        let neighbors = self.get_neighbors(caller_id);
+        if neighbors.is_empty() {
+            return Err(format!("No connected neighbor terminals found for {}", caller_id));
+        }
+
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "Failed to acquire lock".to_string())?;
+
+        let mut sent_to = Vec::new();
+        for target_id in &neighbors {
+            if let Some(session) = sessions.get_mut(target_id) {
+                let _ = session.writer.write_all(data.as_bytes());
+                let _ = session.writer.flush();
+                sent_to.push(target_id.clone());
+            }
+        }
+
+        Ok(sent_to)
+    }
+
     pub async fn ask_session(&self, id: &str, prompt: &str, timeout_secs: u64) -> Result<String, String> {
         let buffer_start_len = {
             let sessions = self

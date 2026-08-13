@@ -20,24 +20,33 @@ pub fn ensure_cli_installed(port: u16) {
     let node_script_content = format!(
         r#"#!/usr/bin/env node
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
 const PORT = process.env.MANDANTE_PORT || {};
+const CALLER_ID = process.env.MANDANTE_TERMINAL_ID || '';
 const BASE_URL = `http://127.0.0.1:${{PORT}}`;
 
 const args = process.argv.slice(2);
 const command = args[0];
 
-function request(method, path, body = null) {{
+function request(method, reqPath, body = null) {{
   return new Promise((resolve, reject) => {{
-    const url = new URL(path, BASE_URL);
+    const payload = body ? JSON.stringify(body) : null;
+    const url = new URL(reqPath, BASE_URL);
+    const headers = {{
+      'Content-Type': 'application/json',
+      'X-Mandante-Terminal-ID': CALLER_ID,
+    }};
+    if (payload) {{
+      headers['Content-Length'] = Buffer.byteLength(payload);
+    }}
     const options = {{
       hostname: url.hostname,
       port: url.port,
       path: url.pathname + url.search,
       method: method,
-      headers: {{
-        'Content-Type': 'application/json',
-      }},
+      headers: headers,
     }};
 
     const req = http.request(options, (res) => {{
@@ -57,24 +66,35 @@ function request(method, path, body = null) {{
       reject(new Error(`Failed to connect to Mandante Mesh on port ${{PORT}}: ${{err.message}}`));
     }});
 
-    if (body) {{
-      req.write(JSON.stringify(body));
+    if (payload) {{
+      req.write(payload);
     }}
     req.end();
   }});
 }}
 
 async function main() {{
+  if (command === 'skill' || command === 'skills' || command === 'info') {{
+    const skillPath = path.join(__dirname, '..', 'skills', 'mandante-mesh.md');
+    if (fs.existsSync(skillPath)) {{
+      console.log(fs.readFileSync(skillPath, 'utf8'));
+    }} else {{
+      console.log('Mandante skill file not found at: ' + skillPath);
+    }}
+    return;
+  }}
+
   if (!command || command === 'help' || command === '--help') {{
     console.log(`
 Mandante Mesh CLI - Inter-Terminal Orchestrator
 
 Usage:
-  mandante list                         List active terminal sessions
+  mandante list                         List active connected terminal sessions
   mandante read <id> [max_lines]       Read session output / transcript
   mandante send <id> "<message>"       Send input / command to terminal
   mandante ask <id> "<prompt>"         Ask prompt and wait for agent output
-  mandante broadcast "<message>"       Broadcast text to all terminals
+  mandante broadcast "<message>"       Broadcast text to connected terminals
+  mandante skill                        Display Mandante Mesh instructions / rules
 `);
     return;
   }}
@@ -197,58 +217,54 @@ node "$HOME/.mandante/bin/mandante-cli.js" "$@"
         let _ = fs::set_permissions(bin_dir.join("mandante"), fs::Permissions::from_mode(0o755));
     }
 
-    // 5. Install AGY Skill for Mandante Mesh
-    install_agy_skill();
+    // 5. Save local Mandante Skill instructions file
+    save_mandante_skill();
 }
 
-fn install_agy_skill() {
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_else(|_| ".".to_string());
-    
-    let skill_dir = PathBuf::from(home).join(".gemini").join("config").join("skills").join("mandante-mesh");
+fn save_mandante_skill() {
+    let mandante_dir = get_mandante_dir();
+    let skill_dir = mandante_dir.join("skills");
     let _ = fs::create_dir_all(&skill_dir);
 
-    let skill_md = r#"---
-name: mandante-mesh
-description: Inter-terminal communication and multi-agent orchestration bus in Mandante. Use this skill whenever you need to check what another terminal is doing, communicate with another AI agent (OpenCode, Claude Code, etc.) or shell running in another terminal tab/window inside Mandante.
----
-
-# Mandante Mesh - Inter-Terminal Interoperability & Communication
+    let skill_md = r#"# Mandante Mesh - Inter-Terminal Communication & Visual Rope Rules
 
 You are running inside **Mandante**, a multi-agent canvas and orchestrator.
-Mandante provides a local IPC mesh network connecting all open terminals.
+Mandante provides a local IPC mesh network connecting open terminals.
+
+## 🔌 Visual Connection Rules (Cordinhas)
+- You can **ONLY** see and communicate with terminals that are **physically connected to your terminal shape via a rope connection (cordinha)** on the canvas.
+- If `mandante list` returns no active terminals, inform the user: *"Nenhum terminal está conectado visualmente a este nó via cordinha no canvas."*
 
 ## Available CLI Commands
 
 Use `run_command` or bash execution to run `mandante` commands:
 
-1. **List all open terminal sessions in Mandante**:
+1. **List connected terminal sessions**:
    ```bash
    mandante list
    ```
-   *Returns terminal IDs, custom titles, agent types (e.g. opencode, agy, claude, bash), and CWDs.*
+   *Returns connected terminal IDs, custom titles, agent types (e.g. opencode, agy, claude, bash), and CWDs.*
 
-2. **Read output/transcript of another terminal session**:
+2. **Read output/transcript of a connected terminal session**:
    ```bash
    mandante read <terminal_id>
    ```
-   *Reads clean human-readable output transcript from terminal `<terminal_id>`.*
+   *Reads clean human-readable output transcript from connected terminal `<terminal_id>`.*
 
-3. **Send a prompt/message to another terminal session and receive its response**:
+3. **Send a prompt/message to a connected terminal session**:
    ```bash
    mandante ask <terminal_id> "Your prompt or instruction here"
    ```
-   *Sends prompt to target terminal, waits for the agent/shell in that terminal to output response, and returns the response.*
+   *Sends prompt to connected target terminal, waits for the agent/shell in that terminal to output response, and returns the response.*
 
-4. **Send raw input/command to a terminal**:
+4. **Send raw input/command to a connected terminal**:
    ```bash
    mandante send <terminal_id> "ls -la"
    ```
 
-5. **Broadcast message to all open terminals**:
+5. **Broadcast message to all connected neighbor terminals**:
    ```bash
-   mandante broadcast "Status update from AGY..."
+   mandante broadcast "Status update..."
    ```
 
 ## How to Handle Multi-Agent Workflow
@@ -256,5 +272,5 @@ Use `run_command` or bash execution to run `mandante` commands:
 - When asked "tell OpenCode in terminal 2 to fix the function in file X", run `mandante ask <id> "Fix function foo in file X"`.
 "#;
 
-    let _ = fs::write(skill_dir.join("SKILL.md"), skill_md);
+    let _ = fs::write(skill_dir.join("mandante-mesh.md"), skill_md);
 }
