@@ -253,10 +253,26 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
   const exportWorkspace = useCallback(async () => {
     if (!editorRef.current) return;
     const editor = editorRef.current;
+    const currentPageId = editor.getCurrentPageId();
     const shapes = editor.getCurrentPageShapes();
+
+    let pageConnections: any[] = [];
+    try {
+      const saved = localStorage.getItem("mandante_connections_map");
+      if (saved) {
+        const map = JSON.parse(saved);
+        pageConnections = map[currentPageId] || [];
+      }
+    } catch (_) {}
+
+    const payload = {
+      version: 1,
+      shapes,
+      connections: pageConnections,
+    };
     
-    // Salva o snapshot completo das formas da página (terminais, imagens, desenhos, etc.)
-    const json = JSON.stringify(shapes, null, 2);
+    // Salva o snapshot completo das formas e conexões da página
+    const json = JSON.stringify(payload, null, 2);
 
     try {
       // Abre a caixa de diálogo nativa do Sistema Operacional para Escolher Pasta e Nome
@@ -288,6 +304,86 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
   }, []);
 
   const importWorkspace = useCallback(async () => {
+    const processImportContent = (jsonContent: string): number => {
+      if (!editorRef.current) return 0;
+      const editor = editorRef.current;
+
+      let items: any[] = [];
+      let connections: any[] = [];
+
+      try {
+        const parsed = JSON.parse(jsonContent);
+        if (Array.isArray(parsed)) {
+          items = parsed;
+        } else if (parsed && Array.isArray(parsed.shapes)) {
+          items = parsed.shapes;
+          connections = Array.isArray(parsed.connections) ? parsed.connections : [];
+        }
+      } catch (err) {
+        console.error("Erro ao ler JSON do workspace:", err);
+        return 0;
+      }
+
+      clearCanvas();
+      const currentPageId = editor.getCurrentPageId();
+      const shapeIdMap = new Map<string, string>();
+
+      items.forEach((item: any) => {
+        const oldId = item.id;
+        const newShapeId = createShapeId();
+        if (oldId) shapeIdMap.set(oldId, newShapeId);
+
+        if (item.type === "terminal") {
+          const id = `term-${Math.random().toString(36).substring(2, 9)}`;
+          editor.createShape({
+            ...item,
+            id: newShapeId,
+            props: {
+              ...item.props,
+              terminalId: id,
+            },
+          });
+        } else {
+          editor.createShape({
+            ...item,
+            id: newShapeId,
+          });
+        }
+      });
+
+      if (connections.length > 0) {
+        const remapped = connections.map((c: any) => ({
+          ...c,
+          id: `rope-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+          fromShapeId: shapeIdMap.get(c.fromShapeId) || c.fromShapeId,
+          toShapeId: shapeIdMap.get(c.toShapeId) || c.toShapeId,
+          amplitude: 55,
+          phase: 0,
+          settled: false,
+        }));
+
+        try {
+          const saved = localStorage.getItem("mandante_connections_map");
+          const map = saved ? JSON.parse(saved) : {};
+          map[currentPageId] = remapped;
+          localStorage.setItem("mandante_connections_map", JSON.stringify(map));
+          window.dispatchEvent(new CustomEvent("mandante:connections-updated"));
+        } catch (err) {
+          console.error("Erro ao salvar conexões no import:", err);
+        }
+      } else {
+        try {
+          const saved = localStorage.getItem("mandante_connections_map");
+          const map = saved ? JSON.parse(saved) : {};
+          map[currentPageId] = [];
+          localStorage.setItem("mandante_connections_map", JSON.stringify(map));
+          window.dispatchEvent(new CustomEvent("mandante:connections-updated"));
+        } catch (_) {}
+      }
+
+      return items.length;
+    };
+
     try {
       // Abre a caixa de diálogo nativa do Sistema Operacional para Selecionar o Arquivo
       const selected = await open({
@@ -297,29 +393,10 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
 
       if (selected && typeof selected === "string") {
         const jsonContent: string = await invoke("read_text_file", { path: selected });
-        const items = JSON.parse(jsonContent);
+        const restoredCount = processImportContent(jsonContent);
 
-        if (Array.isArray(items)) {
-          clearCanvas();
-          const editor = editorRef.current!;
-          
-          items.forEach((item: any) => {
-            if (item.type === "terminal") {
-              const id = `term-${Math.random().toString(36).substring(2, 9)}`;
-              editor.createShape({
-                ...item,
-                id: createShapeId(),
-                props: {
-                  ...item.props,
-                  terminalId: id,
-                },
-              });
-            } else {
-              editor.createShape(item);
-            }
-          });
-
-          await message(`Workspace carregado com sucesso!\n(${items.length} itens restaurados)`, {
+        if (restoredCount > 0) {
+          await message(`Workspace carregado com sucesso!\n(${restoredCount} itens restaurados)`, {
             title: "Mandante Spatial Orchestrator",
             kind: "info",
           });
@@ -337,26 +414,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
         const reader = new FileReader();
         reader.onload = (event) => {
           try {
-            const items = JSON.parse(event.target?.result as string);
-            if (Array.isArray(items)) {
-              clearCanvas();
-              const editor = editorRef.current!;
-              items.forEach((item: any) => {
-                if (item.type === "terminal") {
-                  const id = `term-${Math.random().toString(36).substring(2, 9)}`;
-                  editor.createShape({
-                    ...item,
-                    id: createShapeId(),
-                    props: {
-                      ...item.props,
-                      terminalId: id,
-                    },
-                  });
-                } else {
-                  editor.createShape(item);
-                }
-              });
-            }
+            processImportContent(event.target?.result as string);
           } catch (e) {}
         };
         reader.readAsText(file);
@@ -548,6 +606,16 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     const editor = editorRef.current;
     delete pageCwdMap.current[pageId];
     delete pageEmojiMap.current[pageId];
+
+    try {
+      const saved = localStorage.getItem("mandante_connections_map");
+      if (saved) {
+        const map = JSON.parse(saved);
+        delete map[pageId];
+        localStorage.setItem("mandante_connections_map", JSON.stringify(map));
+        window.dispatchEvent(new CustomEvent("mandante:connections-updated"));
+      }
+    } catch (_) {}
 
     if (editor.getPages().length > 1) {
       saveWorkspaceMetadata();

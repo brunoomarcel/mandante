@@ -6,7 +6,7 @@ import type { Editor } from "@tldraw/tldraw";
 
 type Side = "top" | "bottom" | "left" | "right";
 
-interface RopeConnection {
+export interface RopeConnection {
   id: string;
   fromShapeId: string;
   fromSide: Side;
@@ -47,6 +47,26 @@ const MIN_AMPLITUDE = 0.8;
 /** Minimum movement (px in page space) to count as "the terminal moved" */
 const MOVE_THRESHOLD = 0.5;
 
+const CONNECTIONS_STORAGE_KEY = "mandante_connections_map";
+
+export function loadConnectionsMapFromStorage(): Record<string, RopeConnection[]> {
+  try {
+    const raw = localStorage.getItem(CONNECTIONS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (err) {
+    console.error("[Mandante Rope] Error loading connections from storage:", err);
+    return {};
+  }
+}
+
+export function saveConnectionsMapToStorage(map: Record<string, RopeConnection[]>) {
+  try {
+    localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(map));
+  } catch (err) {
+    console.error("[Mandante Rope] Error saving connections to storage:", err);
+  }
+}
+
 // ─── Coordinate helper ────────────────────────────────────────────────────────
 
 function pageToSVG(editor: Editor, pageX: number, pageY: number): { x: number; y: number } {
@@ -63,10 +83,19 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
   const connectionsRef = useRef<RopeConnection[]>([]);
   connectionsRef.current = connections;
 
-  // Sync visual connections and connected note objects to Rust backend
+  const connectionsMapRef = useRef<Record<string, RopeConnection[]>>(loadConnectionsMapFromStorage());
+  const currentPageIdRef = useRef<string | null>(null);
+
+  // Sync visual connections and connected note objects to Rust backend and storage
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
+
+    const currentPageId = currentPageIdRef.current || editor.getCurrentPageId();
+    if (currentPageId) {
+      connectionsMapRef.current[currentPageId] = connections;
+      saveConnectionsMapToStorage(connectionsMapRef.current);
+    }
 
     const pairs: [string, string][] = [];
     const noteMap = new Map<string, { id: string; text: string; color?: string }>();
@@ -108,6 +137,28 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
       console.error("[Mandante Rope] Failed to update backend notes:", err);
     });
   }, [connections, editorRef]);
+
+  // Listen for external connections update event (e.g. workspace import/delete)
+  useEffect(() => {
+    const handleConnectionsUpdated = () => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const pageId = editor.getCurrentPageId();
+      connectionsMapRef.current = loadConnectionsMapFromStorage();
+      const pageConns = (connectionsMapRef.current[pageId] || []).map(c => ({
+        ...c,
+        amplitude: INITIAL_AMPLITUDE,
+        phase: 0,
+        settled: false,
+      }));
+      setConnections(pageConns);
+    };
+
+    window.addEventListener("mandante:connections-updated", handleConnectionsUpdated);
+    return () => {
+      window.removeEventListener("mandante:connections-updated", handleConnectionsUpdated);
+    };
+  }, [editorRef]);
 
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -173,19 +224,47 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
 
     const tick = () => {
       const editor = editorRef.current;
+      if (!editor) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
 
-      // ── 1. Detect terminal movement (outside setConnections to avoid side-effects in updater) ──
-      const movedIds = new Set<string>();
-      if (editor) {
-        for (const s of editor.getCurrentPageShapes()) {
-          if (s.type !== "terminal" && s.type !== "note") continue;
-          const shape = s as any;
-          const prev = prevPositions.current.get(s.id);
-          if (prev && Math.hypot(shape.x - prev.x, shape.y - prev.y) > MOVE_THRESHOLD) {
-            movedIds.add(s.id);
-          }
-          prevPositions.current.set(s.id, { x: shape.x, y: shape.y });
+      const pageId = editor.getCurrentPageId();
+
+      // Detect workspace/page change
+      if (currentPageIdRef.current !== pageId) {
+        const prevPageId = currentPageIdRef.current;
+        if (prevPageId) {
+          connectionsMapRef.current[prevPageId] = connectionsRef.current;
         }
+
+        currentPageIdRef.current = pageId;
+
+        const pageConns = (connectionsMapRef.current[pageId] || []).map(c => ({
+          ...c,
+          amplitude: INITIAL_AMPLITUDE,
+          phase: 0,
+          settled: false,
+        }));
+
+        setConnections(pageConns);
+        saveConnectionsMapToStorage(connectionsMapRef.current);
+
+        setTick(t => t + 1);
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+
+      // ── 1. Detect terminal movement ──
+      const movedIds = new Set<string>();
+      for (const s of editor.getCurrentPageShapes()) {
+        if (s.type !== "terminal" && s.type !== "note") continue;
+        const shape = s as any;
+        const prev = prevPositions.current.get(s.id);
+        if (prev && Math.hypot(shape.x - prev.x, shape.y - prev.y) > MOVE_THRESHOLD) {
+          movedIds.add(s.id);
+        }
+        prevPositions.current.set(s.id, { x: shape.x, y: shape.y });
       }
 
       // ── 2. Update connections (physics decay + retrigger on move + orphan cleanup) ──
@@ -193,13 +272,11 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         let next = prev;
 
         // Orphan cleanup
-        if (editor) {
-          const alive = new Set(editor.getCurrentPageShapes().map(s => s.id));
-          const cleaned = next.filter(
-            c => alive.has(c.fromShapeId as any) && alive.has(c.toShapeId as any)
-          );
-          if (cleaned.length !== next.length) next = cleaned;
-        }
+        const alive = new Set(editor.getCurrentPageShapes().map(s => s.id));
+        const cleaned = next.filter(
+          c => alive.has(c.fromShapeId as any) && alive.has(c.toShapeId as any)
+        );
+        if (cleaned.length !== next.length) next = cleaned;
 
         const needsUpdate = next.some(c => !c.settled) || movedIds.size > 0;
         if (!needsUpdate) return next;
@@ -208,7 +285,6 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
           const terminalMoved = movedIds.has(c.fromShapeId) || movedIds.has(c.toShapeId);
 
           if (terminalMoved) {
-            // Retrigger full swing when an attached terminal moves
             return {
               ...c,
               amplitude: INITIAL_AMPLITUDE,
@@ -219,7 +295,6 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
 
           if (c.settled) return c;
 
-          // Normal physics decay
           const amplitude = c.amplitude * DAMPING;
           const phase = c.phase + FREQUENCY;
           return { ...c, amplitude, phase, settled: amplitude < MIN_AMPLITUDE };
