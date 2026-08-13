@@ -438,57 +438,71 @@ export const App: React.FC = () => {
             </div>
 
             <div className="space-y-0.5">
-              {workspaces
-                .filter((ws: any) => !((ws.name === "Page 1" || ws.name === "Página 1") && !ws.cwd))
-                .map((ws: any) => {
-                  const isActive = ws.id === activeWorkspaceId;
-                  return (
-                    <div
-                      key={ws.id}
-                      onClick={() => handleSwitchWorkspace(ws.id)}
-                      className={`group flex items-center justify-between px-2 py-1.5 text-xs font-medium ${isActive
-                        ? isLight
-                          ? "bg-slate-200/80 text-slate-900 font-semibold border-l-2 border-indigo-600"
-                          : "bg-[#21262d] text-white font-semibold border-l-2 border-indigo-500"
-                        : isLight
-                          ? "text-slate-600 hover:bg-slate-100"
-                          : "text-slate-400 hover:bg-[#21262d]/60"
-                        } rounded-md cursor-pointer transition-all`}
-                    >
-                      <span className="flex flex-col truncate min-w-0 pr-1">
-                        <span className="flex items-center gap-1.5 truncate">
-                          <span className="text-xs">{ws.emoji || "📁"}</span>
-                          <span className="truncate">{ws.name}</span>
-                        </span>
-                        {ws.cwd && (
-                          <span className="text-[9px] text-slate-400 truncate font-mono ml-5">
-                            {ws.cwd.split("/").pop() || ws.cwd}
+              {workspaces.filter((ws: any) => !((ws.name === "Page 1" || ws.name === "Página 1") && !ws.cwd)).length === 0 ? (
+                <button
+                  onClick={handleOpenModal}
+                  className={`w-full py-2 px-3 border border-dashed rounded-lg text-center cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
+                    isLight
+                      ? "border-slate-300 hover:bg-slate-100 text-slate-600"
+                      : "border-[#30363d] hover:bg-[#21262d] text-slate-400"
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span className="text-xs font-medium">Criar Workspace</span>
+                </button>
+              ) : (
+                workspaces
+                  .filter((ws: any) => !((ws.name === "Page 1" || ws.name === "Página 1") && !ws.cwd))
+                  .map((ws: any) => {
+                    const isActive = ws.id === activeWorkspaceId;
+                    return (
+                      <div
+                        key={ws.id}
+                        onClick={() => handleSwitchWorkspace(ws.id)}
+                        className={`group flex items-center justify-between px-2 py-1.5 text-xs font-medium ${isActive
+                          ? isLight
+                            ? "bg-slate-200/80 text-slate-900 font-semibold border-l-2 border-indigo-600"
+                            : "bg-[#21262d] text-white font-semibold border-l-2 border-indigo-500"
+                          : isLight
+                            ? "text-slate-600 hover:bg-slate-100"
+                            : "text-slate-400 hover:bg-[#21262d]/60"
+                          } rounded-md cursor-pointer transition-all`}
+                      >
+                        <span className="flex flex-col truncate min-w-0 pr-1">
+                          <span className="flex items-center gap-1.5 truncate">
+                            <span className="text-xs">{ws.emoji || "📁"}</span>
+                            <span className="truncate">{ws.name}</span>
                           </span>
-                        )}
-                      </span>
-
-                      <div className="flex items-center space-x-1 shrink-0">
-                        <span className={`text-[10px] ${isLight ? "bg-slate-200 text-slate-700" : "bg-[#30363d] text-slate-300"} px-1.5 py-0.2 rounded-full font-mono`}>
-                          {ws.terminalCount}
+                          {ws.cwd && (
+                            <span className="text-[9px] text-slate-400 truncate font-mono ml-5">
+                              {ws.cwd.split("/").pop() || ws.cwd}
+                            </span>
+                          )}
                         </span>
-                        <button
-                          onClick={(e) => handleOpenEditModal(ws, e)}
-                          title="Editar / Renomear Workspace"
-                          className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-500 transition-opacity"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteWorkspace(ws.id, e)}
-                          title="Excluir Workspace"
-                          className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-red-500 transition-opacity"
-                        >
-                          ✕
-                        </button>
+
+                        <div className="flex items-center space-x-1 shrink-0">
+                          <span className={`text-[10px] ${isLight ? "bg-slate-200 text-slate-700" : "bg-[#30363d] text-slate-300"} px-1.5 py-0.2 rounded-full font-mono`}>
+                            {ws.terminalCount}
+                          </span>
+                          <button
+                            onClick={(e) => handleOpenEditModal(ws, e)}
+                            title="Editar / Renomear Workspace"
+                            className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-indigo-500 transition-opacity"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteWorkspace(ws.id, e)}
+                            title="Excluir Workspace"
+                            className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-red-500 transition-opacity"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+              )}
             </div>
           </div>
         </div>

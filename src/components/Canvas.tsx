@@ -471,9 +471,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     const pages = editor.getPages();
     return pages
       .filter((page) => {
-        // Se for a página inicial vazia "Page 1" do tldraw sem nenhuma alteração, desconsidera da lista
-        const isDefaultUnconfigured = (page.name === "Page 1" || page.name === "Página 1") && !pageCwdMap.current[page.id] && !pageEmojiMap.current[page.id];
-        return !isDefaultUnconfigured || pages.length === 1;
+        // Se for a página inicial vazia "Page 1" ou "Página 1" sem CWD e sem Emoji, desconsidera da lista de workspaces do usuário
+        const isDefaultUnconfigured =
+          (page.name === "Page 1" || page.name === "Página 1") &&
+          !pageCwdMap.current[page.id] &&
+          !pageEmojiMap.current[page.id];
+        return !isDefaultUnconfigured;
       })
       .map((page) => {
         const pageShapeIds = editor.getPageShapeIds(page.id);
@@ -549,9 +552,13 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
       saveWorkspaceMetadata();
       editor.deletePage(pageId as any);
     } else {
-      editor.createPage({ name: "Workspace 1" });
+      // Se for o único workspace existente, limpa seu conteúdo e reseta para a página inicial padrão unconfigured
+      const shapeIds = editor.getPageShapeIds(pageId as any);
+      if (shapeIds.size > 0) {
+        editor.deleteShapes(Array.from(shapeIds));
+      }
+      editor.renamePage(pageId as any, "Page 1");
       saveWorkspaceMetadata();
-      editor.deletePage(pageId as any);
     }
   }, [saveWorkspaceMetadata]);
 
