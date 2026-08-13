@@ -539,9 +539,14 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
   const deleteWorkspace = useCallback((pageId: string) => {
     if (!editorRef.current) return;
     const editor = editorRef.current;
+    delete pageCwdMap.current[pageId];
+    delete pageEmojiMap.current[pageId];
+
     if (editor.getPages().length > 1) {
-      delete pageCwdMap.current[pageId];
-      delete pageEmojiMap.current[pageId];
+      saveWorkspaceMetadata();
+      editor.deletePage(pageId as any);
+    } else {
+      editor.createPage({ name: "Workspace 1" });
       saveWorkspaceMetadata();
       editor.deletePage(pageId as any);
     }

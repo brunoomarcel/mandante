@@ -478,15 +478,13 @@ export const App: React.FC = () => {
                         >
                           ✏️
                         </button>
-                        {workspaces.length > 1 && (
-                          <button
-                            onClick={(e) => handleDeleteWorkspace(ws.id, e)}
-                            title="Excluir Workspace"
-                            className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-red-500 transition-opacity"
-                          >
-                            ✕
-                          </button>
-                        )}
+                        <button
+                          onClick={(e) => handleDeleteWorkspace(ws.id, e)}
+                          title="Excluir Workspace"
+                          className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-red-500 transition-opacity"
+                        >
+                          ✕
+                        </button>
                       </div>
                     </div>
                   );
