@@ -115,7 +115,7 @@ export interface WorkspaceItem {
 export interface CanvasHandle {
   addTerminalNode: (title?: string, customX?: number, customY?: number, customCwd?: string, bootCommand?: string, agentType?: string) => void;
   addNoteNode: (text?: string) => void;
-  loadPreset: (presetType: "fullstack" | "grid") => void;
+  loadPreset: (presetType: "fullstack") => void;
   broadcastCommand: (command: string) => void;
   clearCanvas: () => void;
   exportWorkspace: () => void;
@@ -409,50 +409,6 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
               title: item.title,
               color: item.color,
               bootCommand: item.bootCommand,
-            },
-          });
-        });
-      } else if (presetType === "grid") {
-        const items = [
-          {
-            title: "Auth Service",
-            x: center.x - 660,
-            y: center.y - 420,
-            color: "purple" as TerminalThemeColor,
-          },
-          {
-            title: "Payment API",
-            x: center.x + 20,
-            y: center.y - 420,
-            color: "amber" as TerminalThemeColor,
-          },
-          {
-            title: "Worker & Queue",
-            x: center.x - 660,
-            y: center.y + 20,
-            color: "indigo" as TerminalThemeColor,
-          },
-          {
-            title: "Redis Cache & PubSub",
-            x: center.x + 20,
-            y: center.y + 20,
-            color: "rose" as TerminalThemeColor,
-          },
-        ];
-
-        items.forEach((item) => {
-          const id = `term-${Math.random().toString(36).substring(2, 9)}`;
-          editor.createShape({
-            id: createShapeId(),
-            type: "terminal",
-            x: item.x,
-            y: item.y,
-            props: {
-              w: 640,
-              h: 400,
-              terminalId: id,
-              title: item.title,
-              color: item.color,
             },
           });
         });

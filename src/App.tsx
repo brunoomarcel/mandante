@@ -44,7 +44,6 @@ const TRANSLATIONS: Record<Language, Record<string, string>> = {
     quickActions: "Ações Rápidas",
     createTerminal: "Novo Terminal",
     presetFullstack: "Preset Fullstack",
-    presetGrid: "Preset Grid 2x2",
     placeholder: "Comando em lote nos terminais...",
     clear: "Limpar Canvas",
     save: "Salvar Workspace",
@@ -54,7 +53,6 @@ const TRANSLATIONS: Record<Language, Record<string, string>> = {
     quickActions: "Quick Actions",
     createTerminal: "Create Terminal",
     presetFullstack: "Fullstack Preset",
-    presetGrid: "Grid 2x2 Preset",
     placeholder: "Broadcast command to terminals...",
     clear: "Clear Canvas",
     save: "Save Workspace",
@@ -64,7 +62,6 @@ const TRANSLATIONS: Record<Language, Record<string, string>> = {
     quickActions: "Acciones Rápidas",
     createTerminal: "Crear Terminal",
     presetFullstack: "Preset Fullstack",
-    presetGrid: "Preset Grid 2x2",
     placeholder: "Transmitir comando a los terminales...",
     clear: "Limpiar Canvas",
     save: "Guardar Workspace",
@@ -300,10 +297,6 @@ export const App: React.FC = () => {
 
   const handleLoadFullstack = () => {
     canvasRef.current?.loadPreset("fullstack");
-  };
-
-  const handleLoadGrid = () => {
-    canvasRef.current?.loadPreset("grid");
   };
 
   const handleClearCanvas = () => {
@@ -605,19 +598,6 @@ export const App: React.FC = () => {
             >
               <Zap className="w-3.5 h-3.5 text-slate-400" />
               <span>Fullstack</span>
-            </button>
-
-            <button
-              onClick={handleLoadGrid}
-              title="Carregar Preset Grid 2x2 (4 Terminais)"
-              className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
-                isLight
-                  ? "border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300"
-                  : "border-[#30363d] text-slate-300 hover:bg-[#21262d] hover:border-slate-600"
-              }`}
-            >
-              <Boxes className="w-3.5 h-3.5 text-slate-400" />
-              <span>Grid 2x2</span>
             </button>
 
             <button
