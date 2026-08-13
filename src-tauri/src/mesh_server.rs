@@ -115,9 +115,16 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
         if let Some(ref caller) = caller_id {
             let neighbors = pm.get_neighbors(caller);
             let filtered: Vec<_> = sessions.into_iter().filter(|s| neighbors.contains(&s.id)).collect();
-            return build_response(200, "OK", &json!(filtered));
+            let notes = pm.get_connected_notes(caller);
+            return build_response(200, "OK", &json!({
+                "terminals": filtered,
+                "notes": notes
+            }));
         }
-        return build_response(200, "OK", &json!(sessions));
+        return build_response(200, "OK", &json!({
+            "terminals": sessions,
+            "notes": []
+        }));
     }
 
     if method == "GET" && path.starts_with("/api/terminals/") && path.ends_with("/session") {
@@ -130,11 +137,26 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
                         403,
                         "Forbidden",
                         &json!({
-                            "error": format!("Terminal [{}] não está conectado visualmente via cordinha ao terminal [{}]", caller, id)
+                            "error": format!("Terminal [{}] não está conectado visualmente via cordinha ao nó [{}]", caller, id)
                         }),
                     );
                 }
             }
+
+            // Check if target is a Note shape
+            if let Some(note) = pm.get_note_by_id(id) {
+                return build_response(
+                    200,
+                    "OK",
+                    &json!({
+                        "id": note.id,
+                        "title": "Bloco de Notas",
+                        "agent_type": "note",
+                        "transcript": note.text
+                    }),
+                );
+            }
+
             let max_lines = parse_query_param(query_str, "max_lines").and_then(|v| v.parse::<usize>().ok());
             match pm.get_transcript(id, max_lines, true) {
                 Ok((metadata, transcript)) => {

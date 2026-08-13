@@ -63,24 +63,49 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
   const connectionsRef = useRef<RopeConnection[]>([]);
   connectionsRef.current = connections;
 
-  // Sync visual connections to Rust backend whenever rope connections change topology
+  // Sync visual connections and connected note objects to Rust backend
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
 
     const pairs: [string, string][] = [];
+    const noteMap = new Map<string, { id: string; text: string; color?: string }>();
+
     for (const c of connections) {
       const fromShape = editor.getShape(c.fromShapeId as any) as any;
       const toShape = editor.getShape(c.toShapeId as any) as any;
-      const fromTermId = fromShape?.props?.terminalId;
-      const toTermId = toShape?.props?.terminalId;
-      if (fromTermId && toTermId) {
-        pairs.push([fromTermId, toTermId]);
+      if (!fromShape || !toShape) continue;
+
+      const fromId = fromShape.type === "terminal" ? fromShape.props?.terminalId : fromShape.id;
+      const toId = toShape.type === "terminal" ? toShape.props?.terminalId : toShape.id;
+
+      if (fromId && toId) {
+        pairs.push([fromId, toId]);
+      }
+
+      if (fromShape.type === "note") {
+        noteMap.set(fromShape.id, {
+          id: fromShape.id,
+          text: fromShape.props?.text || "",
+          color: fromShape.props?.color,
+        });
+      }
+
+      if (toShape.type === "note") {
+        noteMap.set(toShape.id, {
+          id: toShape.id,
+          text: toShape.props?.text || "",
+          color: toShape.props?.color,
+        });
       }
     }
 
     invoke("update_connections", { connections: pairs }).catch(err => {
       console.error("[Mandante Rope] Failed to update backend connections:", err);
+    });
+
+    invoke("update_notes", { notes: Array.from(noteMap.values()) }).catch(err => {
+      console.error("[Mandante Rope] Failed to update backend notes:", err);
     });
   }, [connections, editorRef]);
 
@@ -101,15 +126,17 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
       if (!editor) return null;
       const shape = editor.getShape(shapeId as any) as any;
       if (!shape) return null;
-      const w: number = shape.props?.w ?? 640;
-      const h: number = shape.props?.h ?? 400;
-      const cx = shape.x + w / 2;
-      const cy = shape.y + h / 2;
+      const bounds = editor.getShapePageBounds(shape);
+      if (!bounds) return null;
+      const w = bounds.w;
+      const h = bounds.h;
+      const cx = bounds.x + w / 2;
+      const cy = bounds.y + h / 2;
       return {
-        top:    pageToSVG(editor, cx,          shape.y),
-        bottom: pageToSVG(editor, cx,          shape.y + h),
-        left:   pageToSVG(editor, shape.x,     cy),
-        right:  pageToSVG(editor, shape.x + w, cy),
+        top:    pageToSVG(editor, cx,          bounds.y),
+        bottom: pageToSVG(editor, cx,          bounds.y + h),
+        left:   pageToSVG(editor, bounds.x,     cy),
+        right:  pageToSVG(editor, bounds.x + w, cy),
       };
     },
     [editorRef]
@@ -129,7 +156,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
     const result: Port[] = [];
     const sides: Side[] = ["top", "bottom", "left", "right"];
     for (const s of editor.getCurrentPageShapes()) {
-      if (s.type !== "terminal") continue;
+      if (s.type !== "terminal" && s.type !== "note") continue;
       const ports = getShapePorts(s.id);
       if (!ports) continue;
       for (const side of sides) {
@@ -151,7 +178,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
       const movedIds = new Set<string>();
       if (editor) {
         for (const s of editor.getCurrentPageShapes()) {
-          if (s.type !== "terminal") continue;
+          if (s.type !== "terminal" && s.type !== "note") continue;
           const shape = s as any;
           const prev = prevPositions.current.get(s.id);
           if (prev && Math.hypot(shape.x - prev.x, shape.y - prev.y) > MOVE_THRESHOLD) {

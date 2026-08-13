@@ -102,14 +102,28 @@ Usage:
   try {{
     if (command === 'list' || command === 'ls') {{
       const res = await request('GET', '/api/terminals');
-      if (res.status === 200 && Array.isArray(res.body)) {{
-        console.log('\n=== MANDANTE ACTIVE TERMINAL SESSIONS ===\n');
-        if (res.body.length === 0) {{
-          console.log('No active terminal sessions found.');
+      if (res.status === 200) {{
+        const terminals = Array.isArray(res.body) ? res.body : (res.body.terminals || []);
+        const notes = Array.isArray(res.body) ? [] : (res.body.notes || []);
+
+        console.log('\n=== MANDANTE CONNECTED SESSIONS & NOTES ===\n');
+        if (terminals.length === 0 && notes.length === 0) {{
+          console.log('No connected terminals or notes found.');
         }} else {{
-          res.body.forEach((t) => {{
-            console.log(`• ID: [${{t.id}}] | Title: "${{t.title}}" | Agent: [${{t.agent_type}}] | CWD: ${{t.cwd || 'N/A'}}`);
-          }});
+          if (terminals.length > 0) {{
+            console.log('[Connected Terminals]');
+            terminals.forEach((t) => {{
+              console.log(`  • ID: [${{t.id}}] | Title: "${{t.title}}" | Agent: [${{t.agent_type}}] | CWD: ${{t.cwd || 'N/A'}}`);
+            }});
+          }}
+          if (notes.length > 0) {{
+            if (terminals.length > 0) console.log('');
+            console.log('[Connected Notes (Sticky Notes)]');
+            notes.forEach((n) => {{
+              const snippet = n.text ? n.text.replace(/\r?\n/g, ' ').substring(0, 80) : '';
+              console.log(`  • ID: [${{n.id}}] | Preview: "${{snippet}}..."`);
+            }});
+          }}
         }}
         console.log('\n');
       }} else {{

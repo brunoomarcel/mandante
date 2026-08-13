@@ -24,6 +24,13 @@ pub struct PtySessionInfo {
     pub last_activity: u64,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct NoteItem {
+    pub id: String,
+    pub text: String,
+    pub color: Option<String>,
+}
+
 pub struct PtySession {
     pub writer: Box<dyn Write + Send>,
     pub master: Box<dyn MasterPty + Send>,
@@ -35,6 +42,7 @@ pub struct PtySession {
 pub struct PtyManager {
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
     connections: Arc<Mutex<Vec<(String, String)>>>,
+    notes: Arc<Mutex<HashMap<String, NoteItem>>>,
     mesh_port: Arc<Mutex<u16>>,
 }
 
@@ -43,6 +51,7 @@ impl PtyManager {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             connections: Arc::new(Mutex::new(Vec::new())),
+            notes: Arc::new(Mutex::new(HashMap::new())),
             mesh_port: Arc::new(Mutex::new(41731)),
         }
     }
@@ -55,6 +64,38 @@ impl PtyManager {
 
     pub fn get_mesh_port(&self) -> u16 {
         *self.mesh_port.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    pub fn set_notes(&self, new_notes: Vec<NoteItem>) {
+        if let Ok(mut notes_guard) = self.notes.lock() {
+            notes_guard.clear();
+            for note in new_notes {
+                notes_guard.insert(note.id.clone(), note);
+            }
+        }
+    }
+
+    pub fn get_connected_notes(&self, terminal_id: &str) -> Vec<NoteItem> {
+        let neighbors = self.get_neighbors(terminal_id);
+        let notes_guard = match self.notes.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        let mut result = Vec::new();
+        for n_id in neighbors {
+            if let Some(note) = notes_guard.get(&n_id) {
+                result.push(note.clone());
+            }
+        }
+        result
+    }
+
+    pub fn get_note_by_id(&self, note_id: &str) -> Option<NoteItem> {
+        let notes_guard = match self.notes.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        notes_guard.get(note_id).cloned()
     }
 
     pub fn set_connections(&self, new_conns: Vec<(String, String)>) {
