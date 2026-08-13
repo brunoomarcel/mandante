@@ -386,7 +386,7 @@ export const App: React.FC = () => {
     if (e) e.preventDefault();
     if (canvasRef.current) {
       if (editingWsId) {
-        canvasRef.current.renameWorkspace(editingWsId, newWsName.trim(), newWsEmoji);
+        canvasRef.current.renameWorkspace(editingWsId, newWsName.trim(), newWsEmoji, newWsCwd.trim());
       } else {
         canvasRef.current.createWorkspace(newWsName.trim(), newWsCwd.trim(), newWsEmoji);
       }

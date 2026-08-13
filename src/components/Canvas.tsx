@@ -124,7 +124,7 @@ export interface CanvasHandle {
   getActiveWorkspaceId: () => string;
   switchWorkspace: (pageId: string) => void;
   createWorkspace: (name?: string, cwd?: string, emoji?: string) => string | undefined;
-  renameWorkspace: (pageId: string, newName: string, emoji?: string) => void;
+  renameWorkspace: (pageId: string, newName: string, emoji?: string, cwd?: string) => void;
   deleteWorkspace: (pageId: string) => void;
   zoomIn: () => void;
   zoomOut: () => void;
@@ -534,11 +534,12 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     return targetPageId;
   }, [saveWorkspaceMetadata]);
 
-  const renameWorkspace = useCallback((pageId: string, newName: string, emoji?: string) => {
+  const renameWorkspace = useCallback((pageId: string, newName: string, emoji?: string, cwd?: string) => {
     if (!editorRef.current) return;
     const editor = editorRef.current;
     editor.renamePage(pageId as any, newName);
     if (emoji) pageEmojiMap.current[pageId] = emoji;
+    if (cwd !== undefined) pageCwdMap.current[pageId] = cwd;
     saveWorkspaceMetadata();
   }, [saveWorkspaceMetadata]);
 
