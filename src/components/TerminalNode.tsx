@@ -39,7 +39,7 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
   color = "indigo",
   bootCommand,
   cwd,
-  themeMode = "dark",
+  themeMode = "light",
   onClose,
   onColorChange,
   onTitleChange,

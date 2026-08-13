@@ -114,8 +114,8 @@ const AGENT_INFO: Record<AgentKey, {
 export const App: React.FC = () => {
   const canvasRef = useRef<CanvasHandle>(null);
   const [broadcastCmd, setBroadcastCmd] = useState("");
-  const [themeMode, setThemeMode] = useState<CanvasThemeMode>("dark");
-  const [effectiveCanvasTheme, setEffectiveCanvasTheme] = useState<"light" | "dark">("dark");
+  const [themeMode, setThemeMode] = useState<CanvasThemeMode>("light");
+  const [effectiveCanvasTheme, setEffectiveCanvasTheme] = useState<"light" | "dark">("light");
   const [language, setLanguage] = useState<Language>("pt");
 
   const t = TRANSLATIONS[language];

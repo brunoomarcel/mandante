@@ -146,6 +146,9 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     editor.user.updateUserPreferences({
       colorScheme: themeMode,
     });
+    try {
+      (editor as any).updateInstanceState({ isGridMode: true });
+    } catch (_) {}
   }, [themeMode]);
 
   // Garante a remoção ativa do botão '>', navegação nativa e item 'Visualizar' no menu
