@@ -571,7 +571,7 @@ export const App: React.FC = () => {
           <button
             onClick={toggleTheme}
             title={`Tema: ${themeMode.toUpperCase()} (Clique para alternar)`}
-            className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer ${
+            className={`p-1.5 rounded-full text-xs font-semibold flex items-center justify-center border transition-all cursor-pointer ${
               isLight
                 ? "border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300"
                 : "border-[#30363d] text-slate-300 hover:bg-[#21262d] hover:border-slate-600"
@@ -580,7 +580,6 @@ export const App: React.FC = () => {
             {themeMode === "dark" && <Moon className="w-3.5 h-3.5 text-indigo-400" />}
             {themeMode === "light" && <Sun className="w-3.5 h-3.5 text-amber-500" />}
             {themeMode === "system" && <Sliders className="w-3.5 h-3.5 text-emerald-500" />}
-            <span className="uppercase">{themeMode}</span>
           </button>
 
           <div className={`h-4 w-px ${isLight ? "bg-slate-200" : "bg-[#30363d]"} mx-0.5`} />
