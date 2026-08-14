@@ -1205,7 +1205,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
         }
       `}</style>
       <Tldraw
-        persistenceKey="mandante_spatial_orchestrator"
+        persistenceKey="mandante_spatial_orchestrator_v2"
         embeds={customEmbeds}
         shapeUtils={customShapeUtils}
         onMount={handleMount}
