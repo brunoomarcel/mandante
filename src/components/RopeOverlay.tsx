@@ -112,7 +112,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         pairs.push([fromId, toId]);
       }
 
-      if (fromShape.type === "note") {
+      if (fromShape.type === "note" || fromShape.type === "sticky_note") {
         noteMap.set(fromShape.id, {
           id: fromShape.id,
           text: fromShape.props?.text || "",
@@ -120,7 +120,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         });
       }
 
-      if (toShape.type === "note") {
+      if (toShape.type === "note" || toShape.type === "sticky_note") {
         noteMap.set(toShape.id, {
           id: toShape.id,
           text: toShape.props?.text || "",
@@ -158,7 +158,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         for (const c of conns) {
           for (const id of [c.fromShapeId, c.toShapeId]) {
             const shape = editor.getShape(id as any) as any;
-            if (shape?.type === "note") {
+            if (shape?.type === "note" || shape?.type === "sticky_note") {
               noteMap.set(shape.id, {
                 id: shape.id,
                 text: shape.props?.text || "",
@@ -274,7 +274,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
     const result: Port[] = [];
     const sides: Side[] = ["top", "bottom", "left", "right"];
     for (const s of editor.getCurrentPageShapes()) {
-      if (s.type !== "terminal" && s.type !== "note") continue;
+      if (s.type !== "terminal" && s.type !== "note" && s.type !== "sticky_note") continue;
       const ports = getShapePorts(s.id);
       if (!ports) continue;
       for (const side of sides) {
@@ -325,7 +325,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
       // ── 1. Detect terminal movement ──
       const movedIds = new Set<string>();
       for (const s of editor.getCurrentPageShapes()) {
-        if (s.type !== "terminal" && s.type !== "note") continue;
+        if (s.type !== "terminal" && s.type !== "note" && s.type !== "sticky_note") continue;
         const shape = s as any;
         const prev = prevPositions.current.get(s.id);
         if (prev && Math.hypot(shape.x - prev.x, shape.y - prev.y) > MOVE_THRESHOLD) {
@@ -374,7 +374,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
       const rawHovered = editor.getHoveredShapeId() ?? null;
       // Only count hover for terminal/note shapes
       const shape = rawHovered ? editor.getShape(rawHovered as any) as any : null;
-      const nextHovered = (shape?.type === "terminal" || shape?.type === "note") ? rawHovered : null;
+      const nextHovered = (shape?.type === "terminal" || shape?.type === "note" || shape?.type === "sticky_note") ? rawHovered : null;
       if (nextHovered !== hoveredShapeIdRef.current) {
         hoveredShapeIdRef.current = nextHovered;
         setHoveredShapeId(nextHovered);

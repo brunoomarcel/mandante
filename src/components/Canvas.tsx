@@ -193,7 +193,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
 
 // Define the TLDraw custom shape interface for Note
 export type INoteShape = TLBaseShape<
-  "note",
+  "sticky_note",
   {
     w: number;
     h: number;
@@ -204,7 +204,7 @@ export type INoteShape = TLBaseShape<
 
 // Custom TLDraw Shape Util for Notes with full 2D resizing (w, h)
 export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
-  static override type = "note" as const;
+  static override type = "sticky_note" as const;
 
   override getDefaultProps(): INoteShape["props"] {
     return {
@@ -259,7 +259,7 @@ export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
         // Only move the origin when resizing from left/top edge
         const update: Record<string, any> = {
           id: shape.id,
-          type: "note",
+          type: "sticky_note",
           props: { ...snap.props, w: newW, h: newH },
         };
         if (edges.left) update.x = startShapeX + startW - newW;
@@ -389,7 +389,7 @@ export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
                       e.nativeEvent.stopImmediatePropagation();
                       editor.updateShape({
                         id: shape.id,
-                        type: "note",
+                        type: "sticky_note",
                         props: { ...shape.props, color: c },
                       });
                     }}
@@ -453,7 +453,7 @@ export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
             onChange={(e) => {
               editor.updateShape({
                 id: shape.id,
-                type: "note",
+                type: "sticky_note",
                 props: { ...shape.props, text: e.target.value },
               });
             }}
@@ -1140,7 +1140,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     const center = editor.getViewportPageBounds().center;
     editor.createShape({
       id: createShapeId(),
-      type: "note",
+      type: "sticky_note",
       x: center.x - 120,
       y: center.y - 120,
       props: {
