@@ -106,17 +106,29 @@ fn update_notes(
 #[tauri::command]
 fn check_agent_installed(command: String) -> bool {
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("where")
-        .arg(&command)
-        .output();
-    #[cfg(not(target_os = "windows"))]
-    let result = std::process::Command::new("which")
-        .arg(&command)
-        .output();
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let result = std::process::Command::new("where")
+            .arg(&command)
+            .creation_flags(CREATE_NO_WINDOW)
+            .output();
 
-    match result {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
+        match result {
+            Ok(output) => output.status.success(),
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let result = std::process::Command::new("which")
+            .arg(&command)
+            .output();
+
+        match result {
+            Ok(output) => output.status.success(),
+            Err(_) => false,
+        }
     }
 }
 

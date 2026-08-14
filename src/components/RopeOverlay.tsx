@@ -39,7 +39,7 @@ export interface RopeOverlayProps {
 
 // ─── Physics ──────────────────────────────────────────────────────────────────
 
-const PORT_RADIUS = 5;
+const PORT_RADIUS = 3;
 const INITIAL_AMPLITUDE = 55;
 const DAMPING = 0.963;
 const FREQUENCY = 0.09;
@@ -138,6 +138,70 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
     });
   }, [connections, editorRef]);
 
+  // ── Real-time note content sync ─────────────────────────────────────────────
+  // The effect above only runs when connections change. This listener also
+  // fires whenever any shape changes (e.g. the user types inside a note),
+  // so the backend always has the latest text.
+  useEffect(() => {
+    // Wait for editor to mount
+    const trySubscribe = () => {
+      const editor = editorRef.current;
+      if (!editor) return null;
+
+      let debounce: ReturnType<typeof setTimeout>;
+
+      const syncNotes = () => {
+        const conns = connectionsRef.current;
+        if (conns.length === 0) return;
+
+        const noteMap = new Map<string, { id: string; text: string; color?: string }>();
+        for (const c of conns) {
+          for (const id of [c.fromShapeId, c.toShapeId]) {
+            const shape = editor.getShape(id as any) as any;
+            if (shape?.type === "note") {
+              noteMap.set(shape.id, {
+                id: shape.id,
+                text: shape.props?.text || "",
+                color: shape.props?.color,
+              });
+            }
+          }
+        }
+        if (noteMap.size > 0) {
+          invoke("update_notes", { notes: Array.from(noteMap.values()) }).catch(() => {});
+        }
+      };
+
+      // tldraw's store.listen fires on every store change
+      const unsub = editor.store.listen(
+        () => {
+          clearTimeout(debounce);
+          debounce = setTimeout(syncNotes, 300);
+        },
+        { scope: "document", source: "user" }
+      );
+
+      return () => {
+        unsub();
+        clearTimeout(debounce);
+      };
+    };
+
+    // Retry until editor is mounted (it may not be ready on first render)
+    let cleanup: (() => void) | null = null;
+    const interval = setInterval(() => {
+      if (editorRef.current) {
+        clearInterval(interval);
+        cleanup = trySubscribe();
+      }
+    }, 100);
+
+    return () => {
+      clearInterval(interval);
+      cleanup?.();
+    };
+  }, [editorRef]);
+
   // Listen for external connections update event (e.g. workspace import/delete)
   useEffect(() => {
     const handleConnectionsUpdated = () => {
@@ -163,6 +227,9 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   dragRef.current = drag;
+
+  const [hoveredShapeId, setHoveredShapeId] = useState<string | null>(null);
+  const hoveredShapeIdRef = useRef<string | null>(null);
 
   const [, setTick] = useState(0);
 
@@ -303,7 +370,17 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         return updated;
       });
 
-      // ── 3. Force re-render for smooth position tracking ──
+      // ── 3. Sync hovered shape from tldraw (no extra DOM layers needed) ──
+      const rawHovered = editor.getHoveredShapeId() ?? null;
+      // Only count hover for terminal/note shapes
+      const shape = rawHovered ? editor.getShape(rawHovered as any) as any : null;
+      const nextHovered = (shape?.type === "terminal" || shape?.type === "note") ? rawHovered : null;
+      if (nextHovered !== hoveredShapeIdRef.current) {
+        hoveredShapeIdRef.current = nextHovered;
+        setHoveredShapeId(nextHovered);
+      }
+
+      // ── 4. Force re-render for smooth position tracking ──
       setTick(t => t + 1);
       raf = requestAnimationFrame(tick);
     };
@@ -403,7 +480,13 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  const ports = getAllPorts();
+  const allPorts = getAllPorts();
+  // Show ports only for the hovered shape (or all when dragging so the user can drop)
+  const ports = drag
+    ? allPorts
+    : hoveredShapeId
+    ? allPorts.filter(p => p.shapeId === hoveredShapeId)
+    : [];
 
   return (
     <svg
@@ -457,7 +540,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         );
       })()}
 
-      {/* Port dots — 4 sides of each terminal */}
+      {/* Port dots — 4 sides of each terminal/note, visible only on hover */}
       {ports.map(port => (
         <g
           key={`${port.shapeId}-${port.side}`}
@@ -477,14 +560,14 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
             });
           }}
         >
-          <circle cx={port.x} cy={port.y} r={PORT_RADIUS + 5} fill="rgba(99,102,241,0.10)" />
+          <circle cx={port.x} cy={port.y} r={PORT_RADIUS + 4} fill="rgba(99,102,241,0.08)" />
           <circle
             cx={port.x}
             cy={port.y}
             r={PORT_RADIUS}
             fill="#6366f1"
             stroke="rgba(255,255,255,0.85)"
-            strokeWidth={1.5}
+            strokeWidth={1}
           />
         </g>
       ))}

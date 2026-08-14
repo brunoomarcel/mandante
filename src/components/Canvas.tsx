@@ -1,4 +1,4 @@
-import React, { useCallback, useImperativeHandle, forwardRef, useRef, useEffect } from "react";
+import React, { useCallback, useContext, useImperativeHandle, forwardRef, useRef, useEffect, useState, createContext } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save, open, message } from "@tauri-apps/plugin-dialog";
 import {
@@ -17,6 +17,9 @@ const customEmbeds = DEFAULT_EMBED_DEFINITIONS.filter(
 );
 import { TerminalNode, TerminalThemeColor } from "./TerminalNode";
 import { RopeOverlay } from "./RopeOverlay";
+
+// Context to propagate themeMode reactively into tldraw shape components
+const ThemeModeContext = createContext<"dark" | "light">("light");
 
 // Define the TLDraw custom shape interface for Terminal
 export type ITerminalShape = TLBaseShape<
@@ -51,6 +54,68 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
 
   override component(shape: ITerminalShape) {
     const editor = useEditor();
+    const themeMode = useContext(ThemeModeContext);
+
+    /** Starts a manual edge/corner resize drag */
+    const startResize = (
+      e: React.PointerEvent,
+      edges: { right?: boolean; bottom?: boolean; left?: boolean; top?: boolean }
+    ) => {
+      e.stopPropagation();
+      e.nativeEvent.stopImmediatePropagation();
+      e.preventDefault();
+
+      // Abort any tldraw interaction FIRST, then read the settled position
+      editor.cancel();
+
+      // Read position from store AFTER cancel so we get the definitive values
+      const snap = editor.getShape(shape.id) as any;
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const startW  = snap.props.w  as number;
+      const startH  = snap.props.h  as number;
+      const startShapeX = snap.x    as number;
+      const startShapeY = snap.y    as number;
+
+      const onMove = (mv: PointerEvent) => {
+        mv.stopImmediatePropagation();
+        mv.preventDefault();
+
+        const cam = editor.getCamera();
+        const dx = (mv.clientX - startClientX) / cam.z;
+        const dy = (mv.clientY - startClientY) / cam.z;
+
+        let newW = startW;
+        let newH = startH;
+
+        if (edges.right)  newW = Math.max(300, startW + dx);
+        if (edges.bottom) newH = Math.max(150, startH + dy);
+        if (edges.left)   newW = Math.max(300, startW - dx);
+        if (edges.top)    newH = Math.max(150, startH - dy);
+
+        // Only move the origin when resizing from left/top edge
+        const update: Record<string, any> = {
+          id: shape.id,
+          type: "terminal",
+          props: { ...snap.props, w: newW, h: newH },
+        };
+        if (edges.left) update.x = startShapeX + startW - newW;
+        if (edges.top)  update.y = startShapeY + startH - newH;
+
+        editor.updateShape<ITerminalShape>(update as any);
+      };
+
+      const onUp = (up: PointerEvent) => {
+        up.stopImmediatePropagation();
+        window.removeEventListener("pointermove", onMove, { capture: true } as any);
+        window.removeEventListener("pointerup",   onUp,   { capture: true } as any);
+      };
+
+      window.addEventListener("pointermove", onMove, { capture: true });
+      window.addEventListener("pointerup",   onUp,   { capture: true });
+    };
+
+    const E = 8; // edge zone thickness in px
 
     return (
       <HTMLContainer
@@ -59,6 +124,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
           width: shape.props.w,
           height: shape.props.h,
           pointerEvents: "all",
+          position: "relative",
         }}
       >
         <TerminalNode
@@ -68,7 +134,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
           color={shape.props.color || "indigo"}
           bootCommand={shape.props.bootCommand}
           cwd={shape.props.cwd}
-          themeMode={document.querySelector(".canvas-light") ? "light" : "dark"}
+          themeMode={themeMode}
           onClose={() => {
             editor.deleteShapes([shape.id]);
           }}
@@ -93,6 +159,29 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
             });
           }}
         />
+
+        {/* ── Resize zones ─────────────────────────────────────────────── */}
+        {/* Positioned above TerminalNode content; capture-phase events prevent tldraw move */}
+        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 50 }}>
+          {/* Corners */}
+          <div onPointerDown={e => startResize(e, { top: true, left: true })}
+               style={{ position: "absolute", top: 0, left: 0, width: E + 4, height: E + 4, cursor: "nw-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { top: true, right: true })}
+               style={{ position: "absolute", top: 0, right: 0, width: E + 4, height: E + 4, cursor: "ne-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { bottom: true, left: true })}
+               style={{ position: "absolute", bottom: 0, left: 0, width: E + 4, height: E + 4, cursor: "sw-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { bottom: true, right: true })}
+               style={{ position: "absolute", bottom: 0, right: 0, width: E + 4, height: E + 4, cursor: "se-resize", pointerEvents: "all" }} />
+          {/* Edges */}
+          <div onPointerDown={e => startResize(e, { top: true })}
+               style={{ position: "absolute", top: 0, left: E + 4, right: E + 4, height: E, cursor: "n-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { bottom: true })}
+               style={{ position: "absolute", bottom: 0, left: E + 4, right: E + 4, height: E, cursor: "s-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { left: true })}
+               style={{ position: "absolute", left: 0, top: E + 4, bottom: E + 4, width: E, cursor: "w-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { right: true })}
+               style={{ position: "absolute", right: 0, top: E + 4, bottom: E + 4, width: E, cursor: "e-resize", pointerEvents: "all" }} />
+        </div>
       </HTMLContainer>
     );
   }
@@ -102,7 +191,348 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
   }
 }
 
-const customShapeUtils = [TerminalShapeUtil];
+// Define the TLDraw custom shape interface for Note
+export type INoteShape = TLBaseShape<
+  "note",
+  {
+    w: number;
+    h: number;
+    text: string;
+    color?: string;
+  }
+>;
+
+// Custom TLDraw Shape Util for Notes with full 2D resizing (w, h)
+export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
+  static override type = "note" as const;
+
+  override getDefaultProps(): INoteShape["props"] {
+    return {
+      w: 240,
+      h: 240,
+      text: "",
+      color: "yellow",
+    };
+  }
+
+  override component(shape: INoteShape) {
+    const editor = useEditor();
+    const themeMode = useContext(ThemeModeContext);
+
+    /** Starts a manual edge/corner resize drag */
+    const startResize = (
+      e: React.PointerEvent,
+      edges: { right?: boolean; bottom?: boolean; left?: boolean; top?: boolean }
+    ) => {
+      e.stopPropagation();
+      e.nativeEvent.stopImmediatePropagation();
+      e.preventDefault();
+
+      // Abort any tldraw interaction FIRST, then read the settled position
+      editor.cancel();
+
+      // Read position from store AFTER cancel so we get the definitive values
+      const snap = editor.getShape(shape.id) as any;
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const startW = (snap.props?.w ?? 240) as number;
+      const startH = (snap.props?.h ?? 240) as number;
+      const startShapeX = snap.x as number;
+      const startShapeY = snap.y as number;
+
+      const onMove = (mv: PointerEvent) => {
+        mv.stopImmediatePropagation();
+        mv.preventDefault();
+
+        const cam = editor.getCamera();
+        const dx = (mv.clientX - startClientX) / cam.z;
+        const dy = (mv.clientY - startClientY) / cam.z;
+
+        let newW = startW;
+        let newH = startH;
+
+        if (edges.right) newW = Math.max(120, startW + dx);
+        if (edges.bottom) newH = Math.max(100, startH + dy);
+        if (edges.left) newW = Math.max(120, startW - dx);
+        if (edges.top) newH = Math.max(100, startH - dy);
+
+        // Only move the origin when resizing from left/top edge
+        const update: Record<string, any> = {
+          id: shape.id,
+          type: "note",
+          props: { ...snap.props, w: newW, h: newH },
+        };
+        if (edges.left) update.x = startShapeX + startW - newW;
+        if (edges.top) update.y = startShapeY + startH - newH;
+
+        editor.updateShape(update as any);
+      };
+
+      const onUp = (up: PointerEvent) => {
+        up.stopImmediatePropagation();
+        window.removeEventListener("pointermove", onMove, { capture: true } as any);
+        window.removeEventListener("pointerup", onUp, { capture: true } as any);
+      };
+
+      window.addEventListener("pointermove", onMove, { capture: true });
+      window.addEventListener("pointerup", onUp, { capture: true });
+    };
+
+    const E = 8;
+    const w = shape.props?.w ?? 240;
+    const h = shape.props?.h ?? 240;
+    const text = shape.props?.text ?? "";
+    const color = shape.props?.color ?? "yellow";
+
+    const NOTE_THEMES: Record<string, { bg: string; border: string; text: string; header: string }> = {
+      yellow: {
+        bg: themeMode === "dark" ? "#2d2a15" : "#fef9c3",
+        border: themeMode === "dark" ? "#713f12" : "#facc15",
+        text: themeMode === "dark" ? "#fef08a" : "#713f12",
+        header: themeMode === "dark" ? "#3e3818" : "#fef08a",
+      },
+      emerald: {
+        bg: themeMode === "dark" ? "#062e20" : "#d1fae5",
+        border: themeMode === "dark" ? "#065f46" : "#34d399",
+        text: themeMode === "dark" ? "#a7f3d0" : "#064e3b",
+        header: themeMode === "dark" ? "#0c3b2b" : "#a7f3d0",
+      },
+      blue: {
+        bg: themeMode === "dark" ? "#0f233a" : "#dbeafe",
+        border: themeMode === "dark" ? "#1e40af" : "#60a5fa",
+        text: themeMode === "dark" ? "#bfdbfe" : "#1e3a8a",
+        header: themeMode === "dark" ? "#142d4a" : "#bfdbfe",
+      },
+      rose: {
+        bg: themeMode === "dark" ? "#311119" : "#ffe4e6",
+        border: themeMode === "dark" ? "#881337" : "#fb7185",
+        text: themeMode === "dark" ? "#fecdd3" : "#881337",
+        header: themeMode === "dark" ? "#3f1621" : "#fecdd3",
+      },
+      purple: {
+        bg: themeMode === "dark" ? "#241335" : "#f3e8ff",
+        border: themeMode === "dark" ? "#581c87" : "#c084fc",
+        text: themeMode === "dark" ? "#e9d5ff" : "#581c87",
+        header: themeMode === "dark" ? "#321a4a" : "#e9d5ff",
+      },
+    };
+
+    const currentTheme = NOTE_THEMES[color] || NOTE_THEMES.yellow;
+
+    return (
+      <HTMLContainer
+        id={shape.id}
+        style={{
+          width: w,
+          height: h,
+          pointerEvents: "all",
+          position: "relative",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            height: "100%",
+            backgroundColor: currentTheme.bg,
+            border: `1.5px solid ${currentTheme.border}`,
+            borderRadius: "12px",
+            boxShadow: themeMode === "dark"
+              ? "0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.4)"
+              : "0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          {/* Note Top Bar */}
+          <div
+            style={{
+              padding: "6px 10px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              borderBottom: `1px solid ${currentTheme.border}44`,
+              background: currentTheme.header,
+              userSelect: "none",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "13px" }}>📝</span>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: currentTheme.text, opacity: 0.8, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Nota
+              </span>
+            </div>
+
+            {/* Color switcher dots & close button */}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {(["yellow", "emerald", "blue", "rose", "purple"] as const).map((c) => {
+                const bgColors: Record<string, string> = {
+                  yellow: "#eab308",
+                  emerald: "#10b981",
+                  blue: "#3b82f6",
+                  rose: "#f43f5e",
+                  purple: "#a855f7",
+                };
+                const isSelected = color === c;
+                return (
+                  <button
+                    key={c}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.nativeEvent.stopImmediatePropagation();
+                    }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.nativeEvent.stopImmediatePropagation();
+                      editor.updateShape({
+                        id: shape.id,
+                        type: "note",
+                        props: { ...shape.props, color: c },
+                      });
+                    }}
+                    style={{
+                      width: "14px",
+                      height: "14px",
+                      borderRadius: "50%",
+                      border: isSelected ? "2px solid #ffffff" : "1.5px solid rgba(0,0,0,0.25)",
+                      outline: isSelected ? "2px solid rgba(0,0,0,0.6)" : "none",
+                      background: bgColors[c],
+                      cursor: "pointer",
+                      padding: 0,
+                      transform: isSelected ? "scale(1.15)" : "scale(1)",
+                      transition: "transform 0.15s ease, border-color 0.15s ease",
+                      boxShadow: isSelected ? "0 2px 4px rgba(0,0,0,0.3)" : "none",
+                    }}
+                    title={`Cor: ${c}`}
+                  />
+                );
+              })}
+              <button
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.nativeEvent.stopImmediatePropagation();
+                }}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.nativeEvent.stopImmediatePropagation();
+                  editor.deleteShapes([shape.id]);
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: currentTheme.text,
+                  opacity: 0.7,
+                  fontSize: "13px",
+                  fontWeight: "bold",
+                  marginLeft: "4px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "18px",
+                  height: "18px",
+                  borderRadius: "4px",
+                  padding: 0,
+                }}
+                title="Excluir Nota"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* Note Content Area */}
+          <textarea
+            value={text}
+            onChange={(e) => {
+              editor.updateShape({
+                id: shape.id,
+                type: "note",
+                props: { ...shape.props, text: e.target.value },
+              });
+            }}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+            }}
+            style={{
+              flex: 1,
+              width: "100%",
+              padding: "10px 12px",
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              resize: "none",
+              color: currentTheme.text,
+              fontSize: "13px",
+              lineHeight: "1.5",
+              fontFamily: "ui-sans-serif, system-ui, sans-serif",
+            }}
+          />
+        </div>
+
+        {/* ── Resize zones ─────────────────────────────────────────────── */}
+        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 50 }}>
+          {/* Corners */}
+          <div onPointerDown={e => startResize(e, { top: true, left: true })}
+               style={{ position: "absolute", top: 0, left: 0, width: E + 4, height: E + 4, cursor: "nw-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { top: true, right: true })}
+               style={{ position: "absolute", top: 0, right: 0, width: E + 4, height: E + 4, cursor: "ne-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { bottom: true, left: true })}
+               style={{ position: "absolute", bottom: 0, left: 0, width: E + 4, height: E + 4, cursor: "sw-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { bottom: true, right: true })}
+               style={{ position: "absolute", bottom: 0, right: 0, width: E + 4, height: E + 4, cursor: "se-resize", pointerEvents: "all" }} />
+          {/* Edges */}
+          <div onPointerDown={e => startResize(e, { top: true })}
+               style={{ position: "absolute", top: 0, left: E + 4, right: E + 4, height: E, cursor: "n-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { bottom: true })}
+               style={{ position: "absolute", bottom: 0, left: E + 4, right: E + 4, height: E, cursor: "s-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { left: true })}
+               style={{ position: "absolute", left: 0, top: E + 4, bottom: E + 4, width: E, cursor: "w-resize", pointerEvents: "all" }} />
+          <div onPointerDown={e => startResize(e, { right: true })}
+               style={{ position: "absolute", right: 0, top: E + 4, bottom: E + 4, width: E, cursor: "e-resize", pointerEvents: "all" }} />
+        </div>
+      </HTMLContainer>
+    );
+  }
+
+  override canEdit() {
+    return true;
+  }
+
+  override hideRotateHandle() {
+    return true;
+  }
+
+  override isAspectRatioLocked() {
+    return false;
+  }
+
+  override canResize() {
+    return true;
+  }
+
+  override getText(shape: INoteShape) {
+    return shape.props?.text ?? "";
+  }
+
+  override indicator(shape: INoteShape) {
+    const w = shape.props?.w ?? 240;
+    const h = shape.props?.h ?? 240;
+    return <rect width={w} height={h} rx={12} ry={12} />;
+  }
+}
+
+const customShapeUtils = [TerminalShapeUtil, NoteShapeUtil];
+
 
 export interface WorkspaceItem {
   id: string;
@@ -143,6 +573,11 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
 
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
+    try {
+      if (editor.getEditingShapeId() === null && editor.getCurrentToolId() === "select.editing_shape") {
+        editor.setCurrentTool("select.idle");
+      }
+    } catch (_) {}
     editor.user.updateUserPreferences({
       colorScheme: themeMode,
     });
@@ -706,11 +1141,13 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     editor.createShape({
       id: createShapeId(),
       type: "note",
-      x: center.x - 100,
-      y: center.y - 100,
+      x: center.x - 120,
+      y: center.y - 120,
       props: {
+        w: 240,
+        h: 240,
         color: "yellow",
-        text: text || "Nova Anotação...",
+        text: text || "",
       },
     });
   }, []);
@@ -737,6 +1174,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
   }));
 
   return (
+    <ThemeModeContext.Provider value={themeMode === "dark" ? "dark" : "light"}>
     <div className={`w-full h-full relative ${themeMode === "dark" ? "canvas-dark" : "canvas-light"}`}>
       <style>{`
         .tl-watermark, [class*="watermark"], a[href*="tldraw"] {
@@ -789,6 +1227,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
       />
       <RopeOverlay editorRef={editorRef} />
     </div>
+    </ThemeModeContext.Provider>
   );
 });
 
