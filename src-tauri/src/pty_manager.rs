@@ -188,9 +188,12 @@ impl PtyManager {
         cmd.env("MANDANTE_PORT", port.to_string());
         cmd.env("MANDANTE_TERMINAL_ID", &id);
 
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        let new_path = format!("{};{}", mandante_bin.to_string_lossy(), current_path);
-        cmd.env("PATH", new_path);
+        let current_path = std::env::var_os("PATH").unwrap_or_default();
+        let mut paths = vec![mandante_bin.clone()];
+        paths.extend(std::env::split_paths(&current_path));
+        if let Ok(new_path) = std::env::join_paths(paths) {
+            cmd.env("PATH", new_path);
+        }
 
         if let Some(ref path) = cwd {
             let p = path.trim();
