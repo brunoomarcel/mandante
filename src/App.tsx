@@ -31,7 +31,6 @@ import {
   RotateCcw,
   Globe,
   Sliders,
-  StickyNote,
   Search,
   Command,
   Keyboard,
@@ -577,21 +576,6 @@ export const App: React.FC = () => {
           >
             <Plus className="w-3.5 h-3.5" />
             <span>{t.createTerminal}</span>
-          </button>
-
-          <button
-            onClick={() => {
-              canvasRef.current?.addNoteNode();
-            }}
-            title="Criar Nova Nota"
-            className={`font-semibold text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 border transition-all cursor-pointer ${
-              isLight
-                ? "border-amber-200 bg-amber-50/80 text-amber-900 hover:bg-amber-100/90"
-                : "border-amber-900/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/50"
-            }`}
-          >
-            <StickyNote className="w-3.5 h-3.5 text-amber-500" />
-            <span>Nova Nota</span>
           </button>
 
           {/* Seletor de Tema no topo ao lado do Novo Terminal (Local 1) */}
