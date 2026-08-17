@@ -10,6 +10,8 @@ import {
   useEditor,
   createShapeId,
   DEFAULT_EMBED_DEFINITIONS,
+  RecordProps,
+  T,
 } from "@tldraw/tldraw";
 
 const customEmbeds = DEFAULT_EMBED_DEFINITIONS.filter(
@@ -40,6 +42,17 @@ export type ITerminalShape = TLBaseShape<
 export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
   static override type = "terminal" as const;
 
+  static override props: RecordProps<ITerminalShape> = {
+    w: T.number,
+    h: T.number,
+    terminalId: T.string,
+    title: T.string,
+    color: T.optional(T.string) as any,
+    bootCommand: T.optional(T.string),
+    agentType: T.optional(T.string),
+    cwd: T.optional(T.string),
+  };
+
   override getDefaultProps(): ITerminalShape["props"] {
     return {
       w: 640,
@@ -48,6 +61,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
       title: "Terminal",
       color: "indigo",
       bootCommand: "",
+      agentType: "shell",
       cwd: "",
     };
   }
@@ -204,6 +218,13 @@ export type INoteShape = TLBaseShape<
 
 // Custom TLDraw Shape Util for Notes with full 2D resizing (w, h)
 export abstract class BaseNoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
+  static override props: RecordProps<INoteShape> = {
+    w: T.number,
+    h: T.number,
+    text: T.string,
+    color: T.optional(T.string),
+  };
+
   override getDefaultProps(): INoteShape["props"] {
     return {
       w: 240,

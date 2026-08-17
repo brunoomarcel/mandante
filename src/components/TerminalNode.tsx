@@ -147,7 +147,9 @@ export const TerminalNode: React.FC<TerminalNodeProps> = ({
     const initRaf = requestAnimationFrame(() => {
       if (isDisposed || !containerRef.current) return;
 
-      fitAddon.fit();
+      try {
+        fitAddon.fit();
+      } catch (_) {}
       const cols = term.cols > 0 ? term.cols : 80;
       const rows = term.rows > 0 ? term.rows : 24;
       lastSizeRef.current = { cols, rows };
