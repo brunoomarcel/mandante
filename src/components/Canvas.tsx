@@ -35,6 +35,7 @@ export type ITerminalShape = TLBaseShape<
     bootCommand?: string;
     agentType?: string;
     cwd?: string;
+    scale?: number;
   }
 >;
 
@@ -51,6 +52,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
     bootCommand: T.optional(T.string),
     agentType: T.optional(T.string),
     cwd: T.optional(T.string),
+    scale: T.optional(T.number),
   };
 
   override getDefaultProps(): ITerminalShape["props"] {
@@ -63,6 +65,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
       bootCommand: "",
       agentType: "shell",
       cwd: "",
+      scale: 1,
     };
   }
 
@@ -229,6 +232,7 @@ export type INoteShape = TLBaseShape<
     h: number;
     text: string;
     color?: string;
+    scale?: number;
   }
 >;
 
@@ -239,6 +243,7 @@ export abstract class BaseNoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
     h: T.number,
     text: T.string,
     color: T.optional(T.string),
+    scale: T.optional(T.number),
   };
 
   override getDefaultProps(): INoteShape["props"] {
@@ -247,6 +252,7 @@ export abstract class BaseNoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
       h: 240,
       text: "",
       color: "yellow",
+      scale: 1,
     };
   }
 
@@ -1191,6 +1197,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
         h: 240,
         color: "yellow",
         text: text || "",
+        scale: 1,
       },
     });
   }, []);
