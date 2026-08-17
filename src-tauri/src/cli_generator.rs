@@ -223,7 +223,15 @@ node "%USERPROFILE%\.mandante\bin\mandante-cli.js" %*
     // 4. mandante (Unix / Git Bash shell wrapper)
     let sh_wrapper = format!(
         r#"#!/bin/sh
-node "$HOME/.mandante/bin/mandante-cli.js" "$@"
+if command -v node >/dev/null 2>&1; then
+  NODE_BIN="node"
+else
+  NODE_BIN=$(find "$HOME/.nvm/versions/node" -maxdepth 3 -name node 2>/dev/null | tail -n 1)
+  if [ -z "$NODE_BIN" ]; then
+    NODE_BIN="node"
+  fi
+fi
+"$NODE_BIN" "$HOME/.mandante/bin/mandante-cli.js" "$@"
 "#
     );
     let _ = fs::write(bin_dir.join("mandante"), sh_wrapper);

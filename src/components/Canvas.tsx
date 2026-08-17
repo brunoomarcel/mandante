@@ -193,7 +193,7 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
 
 // Define the TLDraw custom shape interface for Note
 export type INoteShape = TLBaseShape<
-  "sticky_note",
+  "note" | "sticky_note",
   {
     w: number;
     h: number;
@@ -203,9 +203,7 @@ export type INoteShape = TLBaseShape<
 >;
 
 // Custom TLDraw Shape Util for Notes with full 2D resizing (w, h)
-export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
-  static override type = "sticky_note" as const;
-
+export abstract class BaseNoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
   override getDefaultProps(): INoteShape["props"] {
     return {
       w: 240,
@@ -259,7 +257,7 @@ export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
         // Only move the origin when resizing from left/top edge
         const update: Record<string, any> = {
           id: shape.id,
-          type: "sticky_note",
+          type: shape.type,
           props: { ...snap.props, w: newW, h: newH },
         };
         if (edges.left) update.x = startShapeX + startW - newW;
@@ -389,7 +387,7 @@ export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
                       e.nativeEvent.stopImmediatePropagation();
                       editor.updateShape({
                         id: shape.id,
-                        type: "sticky_note",
+                        type: shape.type,
                         props: { ...shape.props, color: c },
                       });
                     }}
@@ -453,7 +451,7 @@ export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
             onChange={(e) => {
               editor.updateShape({
                 id: shape.id,
-                type: "sticky_note",
+                type: shape.type,
                 props: { ...shape.props, text: e.target.value },
               });
             }}
@@ -531,7 +529,15 @@ export class NoteShapeUtil extends BaseBoxShapeUtil<INoteShape> {
   }
 }
 
-const customShapeUtils = [TerminalShapeUtil, NoteShapeUtil];
+export class NoteShapeUtil extends BaseNoteShapeUtil {
+  static override type = "note" as const;
+}
+
+export class StickyNoteShapeUtil extends BaseNoteShapeUtil {
+  static override type = "sticky_note" as const;
+}
+
+const customShapeUtils = [TerminalShapeUtil, NoteShapeUtil, StickyNoteShapeUtil];
 
 
 export interface WorkspaceItem {
@@ -1140,7 +1146,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
     const center = editor.getViewportPageBounds().center;
     editor.createShape({
       id: createShapeId(),
-      type: "sticky_note",
+      type: "note",
       x: center.x - 120,
       y: center.y - 120,
       props: {

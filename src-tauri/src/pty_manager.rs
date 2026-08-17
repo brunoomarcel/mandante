@@ -245,10 +245,9 @@ impl PtyManager {
         cmd.env("MANDANTE_AUTH_TOKEN", &auth_token);
 
         // Robust cross-platform PATH construction
+        let current_path = std::env::var_os("PATH").unwrap_or_default();
         let mut paths = vec![mandante_bin];
-        if let Some(current_path) = std::env::var_os("PATH") {
-            paths.extend(std::env::split_paths(&current_path));
-        }
+        paths.extend(std::env::split_paths(&current_path));
         if let Ok(new_path) = std::env::join_paths(paths) {
             cmd.env("PATH", new_path);
         }
