@@ -1,12 +1,12 @@
-use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
+use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter};
-use tokio::time::{sleep, Duration};
+use tokio::time::sleep;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PtyOutputPayload {
@@ -34,6 +34,7 @@ pub struct NoteItem {
 pub struct PtySession {
     pub writer: Box<dyn Write + Send>,
     pub master: Box<dyn MasterPty + Send>,
+    pub child: Box<dyn Child + Send>,
     pub info: PtySessionInfo,
     pub buffer: Arc<Mutex<String>>,
 }
@@ -44,16 +45,68 @@ pub struct PtyManager {
     connections: Arc<Mutex<Vec<(String, String)>>>,
     notes: Arc<Mutex<HashMap<String, NoteItem>>>,
     mesh_port: Arc<Mutex<u16>>,
+    auth_token: Arc<Mutex<String>>,
+}
+
+fn flush_output(
+    session_id: &str,
+    data: &str,
+    buffer_clone: &Arc<Mutex<String>>,
+    log_file_path: &std::path::Path,
+    app_handle: &AppHandle,
+) {
+    if data.is_empty() {
+        return;
+    }
+
+    // 1. Append to in-memory buffer
+    if let Ok(mut buf_guard) = buffer_clone.lock() {
+        buf_guard.push_str(data);
+        // Keep buffer capped at ~150k chars
+        if buf_guard.len() > 150_000 {
+            let drain_to = buf_guard.len() - 100_000;
+            buf_guard.drain(..drain_to);
+        }
+    }
+
+    // 2. Append to disk log file
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_file_path)
+    {
+        let _ = file.write_all(data.as_bytes());
+    }
+
+    // 3. Emit Tauri frontend event
+    let payload = PtyOutputPayload {
+        id: session_id.to_string(),
+        data: data.to_string(),
+    };
+    let event_name = format!("pty-output-{}", session_id);
+    let _ = app_handle.emit(&event_name, payload);
 }
 
 impl PtyManager {
     pub fn new() -> Self {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(1);
+        let pid = std::process::id() as u128;
+        let auth_token = format!("{:016x}{:016x}", nanos, pid.wrapping_mul(0x517cc1b727220a95));
+
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             connections: Arc::new(Mutex::new(Vec::new())),
             notes: Arc::new(Mutex::new(HashMap::new())),
             mesh_port: Arc::new(Mutex::new(41731)),
+            auth_token: Arc::new(Mutex::new(auth_token)),
         }
+    }
+
+    pub fn get_auth_token(&self) -> String {
+        self.auth_token.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn set_mesh_port(&self, port: u16) {
@@ -152,8 +205,8 @@ impl PtyManager {
         let pty_system = native_pty_system();
 
         let size = PtySize {
-            rows,
-            cols,
+            rows: rows.max(1),
+            cols: cols.max(1),
             pixel_width: 0,
             pixel_height: 0,
         };
@@ -163,11 +216,13 @@ impl PtyManager {
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
         let port = self.get_mesh_port();
+        let auth_token = self.get_auth_token();
         let mandante_bin = crate::cli_generator::get_mandante_dir().join("bin");
 
         #[cfg(target_os = "windows")]
         let mut cmd = {
             let mut cmd = CommandBuilder::new("powershell.exe");
+            cmd.arg("-NoLogo");
             cmd.env("TERM", "xterm-256color");
             cmd
         };
@@ -184,13 +239,19 @@ impl PtyManager {
             cmd
         };
 
-        // Inject Mandante Mesh environment variables & PATH
+        // Inject Mandante Mesh environment variables & secure Auth Token
         cmd.env("MANDANTE_PORT", port.to_string());
         cmd.env("MANDANTE_TERMINAL_ID", &id);
+        cmd.env("MANDANTE_AUTH_TOKEN", &auth_token);
 
-        let current_path = std::env::var("PATH").unwrap_or_default();
-        let new_path = format!("{};{}", mandante_bin.to_string_lossy(), current_path);
-        cmd.env("PATH", new_path);
+        // Robust cross-platform PATH construction
+        let mut paths = vec![mandante_bin];
+        if let Some(current_path) = std::env::var_os("PATH") {
+            paths.extend(std::env::split_paths(&current_path));
+        }
+        if let Ok(new_path) = std::env::join_paths(paths) {
+            cmd.env("PATH", new_path);
+        }
 
         if let Some(ref path) = cwd {
             let p = path.trim();
@@ -199,7 +260,7 @@ impl PtyManager {
             }
         }
 
-        let _child = pair
+        let child = pair
             .slave
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn shell command: {}", e))?;
@@ -237,44 +298,33 @@ impl PtyManager {
             last_activity: now,
         };
 
-        // Background reader thread
+        // Background reader thread with high-performance batching and throttling
         std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
+            let mut buf = [0u8; 8192];
+            let mut pending_data = String::with_capacity(16384);
+            let mut last_flush = Instant::now();
+
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let chunk = String::from_utf8_lossy(&buf[..n]);
+                        pending_data.push_str(&chunk);
 
-                        // 1. Append to in-memory buffer
-                        if let Ok(mut buf_guard) = buffer_clone.lock() {
-                            buf_guard.push_str(&data);
-                            // Keep buffer from growing infinitely (cap at ~150k chars)
-                            if buf_guard.len() > 150_000 {
-                                let drain_to = buf_guard.len() - 100_000;
-                                buf_guard.drain(..drain_to);
-                            }
+                        // Batch output: flush if buffer >= 16KB or if ~16ms has elapsed (60 FPS pace)
+                        if pending_data.len() >= 16384 || last_flush.elapsed() >= Duration::from_millis(16) {
+                            flush_output(&session_id, &pending_data, &buffer_clone, &log_file_path, &app_handle_clone);
+                            pending_data.clear();
+                            last_flush = Instant::now();
                         }
-
-                        // 2. Append to disk log file
-                        if let Ok(mut file) = OpenOptions::new()
-                            .create(true)
-                            .append(true)
-                            .open(&log_file_path)
-                        {
-                            let _ = file.write_all(data.as_bytes());
-                        }
-
-                        // 3. Emit Tauri frontend event
-                        let payload = PtyOutputPayload {
-                            id: session_id.clone(),
-                            data,
-                        };
-                        let event_name = format!("pty-output-{}", session_id);
-                        let _ = app_handle_clone.emit(&event_name, payload);
                     }
                     Err(_) => break,
                 }
+            }
+
+            // Flush any remaining trailing bytes on exit
+            if !pending_data.is_empty() {
+                flush_output(&session_id, &pending_data, &buffer_clone, &log_file_path, &app_handle_clone);
             }
         });
 
@@ -288,6 +338,7 @@ impl PtyManager {
             PtySession {
                 writer,
                 master: pair.master,
+                child,
                 info,
                 buffer: session_buffer,
             },
@@ -332,8 +383,8 @@ impl PtyManager {
             session
                 .master
                 .resize(PtySize {
-                    rows,
-                    cols,
+                    rows: rows.max(1),
+                    cols: cols.max(1),
                     pixel_width: 0,
                     pixel_height: 0,
                 })
@@ -350,8 +401,11 @@ impl PtyManager {
             .lock()
             .map_err(|_| "Failed to acquire lock on PTY sessions".to_string())?;
 
-        sessions.remove(id);
-        
+        if let Some(mut session) = sessions.remove(id) {
+            // Explicitly terminate child process
+            let _ = session.child.kill();
+        }
+
         // Remove disk log file
         let log_file_path = crate::cli_generator::get_mandante_dir()
             .join("sessions")
@@ -468,12 +522,12 @@ impl PtyManager {
         self.write(id, &format!("{}\r\n", prompt))?;
 
         let start_time = SystemTime::now();
-        let max_duration = Duration::from_secs(timeout_secs);
+        let max_duration = Duration::from_secs(timeout_secs.max(5));
         let mut last_len = buffer_start_len;
         let mut silence_counter = 0;
 
         loop {
-            sleep(Duration::from_millis(400)).await;
+            sleep(Duration::from_millis(350)).await;
 
             let current_buffer = {
                 let sessions = match self.sessions.lock() {
@@ -494,10 +548,10 @@ impl PtyManager {
                 last_len = current_len;
                 silence_counter = 0;
             } else if current_len > buffer_start_len {
-                // No new bytes received since last check
+                // Output received and currently quiet
                 silence_counter += 1;
-                // If output has stabilized (no new output for 3 cycles = ~1.2s), consider response finished!
-                if silence_counter >= 3 {
+                // If output has stabilized for >= 4 cycles (~1.4s), consider response completed
+                if silence_counter >= 4 {
                     let new_text = &current_buffer[buffer_start_len..];
                     return Ok(strip_ansi_codes(new_text).trim().to_string());
                 }
@@ -505,7 +559,7 @@ impl PtyManager {
 
             if let Ok(elapsed) = start_time.elapsed() {
                 if elapsed >= max_duration {
-                    // Timed out, return whatever we have so far
+                    // Timed out, return whatever we have so far if any
                     if current_len > buffer_start_len {
                         let new_text = &current_buffer[buffer_start_len..];
                         return Ok(strip_ansi_codes(new_text).trim().to_string());

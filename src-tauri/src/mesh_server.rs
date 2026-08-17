@@ -26,7 +26,7 @@ impl MeshServer {
         }
 
         let listener = listener.ok_or_else(|| "Failed to bind to any port for Mandante Mesh Server".to_string())?;
-        println!("[Mandante Mesh] HTTP IPC Server started on http://127.0.0.1:{}", port);
+        println!("[Mandante Mesh] Secure HTTP IPC Server started on http://127.0.0.1:{}", port);
 
         let pty_manager = Arc::new(pty_manager);
 
@@ -79,6 +79,48 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
     let query_str = path_and_query.get(1).copied().unwrap_or("");
 
     let caller_id = get_header(raw_req, "X-Mandante-Terminal-ID");
+    let auth_header = get_header(raw_req, "X-Mandante-Auth-Token")
+        .or_else(|| get_header(raw_req, "Authorization"));
+
+    // Check token authentication
+    let expected_token = pm.get_auth_token();
+    let is_authenticated = match auth_header {
+        Some(ref val) => {
+            let token = val.strip_prefix("Bearer ").unwrap_or(val).trim();
+            token == expected_token
+        }
+        None => false,
+    };
+
+    // Preflight CORS
+    if method == "OPTIONS" {
+        return build_cors_options_response();
+    }
+
+    // Health check endpoint (can be checked without auth)
+    if method == "GET" && (path == "/" || path == "/api/health") {
+        return build_response(
+            200,
+            "OK",
+            &json!({
+                "status": "ok",
+                "service": "Mandante Mesh Server",
+                "version": "1.0.0",
+                "authenticated": is_authenticated
+            }),
+        );
+    }
+
+    // All active API endpoints require auth token to prevent unauthorized local/CSRF access
+    if !is_authenticated {
+        return build_response(
+            401,
+            "Unauthorized",
+            &json!({
+                "error": "Unauthorized: Invalid or missing Mandante Auth Token. Please provide 'X-Mandante-Auth-Token'."
+            }),
+        );
+    }
 
     // Parse body for POST requests
     let body = if method == "POST" {
@@ -93,23 +135,7 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
         ""
     };
 
-    // Routing
-    if method == "OPTIONS" {
-        return build_cors_options_response();
-    }
-
-    if method == "GET" && (path == "/" || path == "/api/health") {
-        return build_response(
-            200,
-            "OK",
-            &json!({
-                "status": "ok",
-                "service": "Mandante Mesh Server",
-                "version": "1.0.0"
-            }),
-        );
-    }
-
+    // GET /api/terminals - list connected or all sessions
     if method == "GET" && path == "/api/terminals" {
         let sessions = pm.list_sessions();
         if let Some(ref caller) = caller_id {
@@ -127,6 +153,7 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
         }));
     }
 
+    // GET /api/terminals/:id/session - read transcript
     if method == "GET" && path.starts_with("/api/terminals/") && path.ends_with("/session") {
         let parts: Vec<&str> = path.split('/').collect();
         if parts.len() == 5 {
@@ -177,6 +204,7 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
         }
     }
 
+    // POST /api/terminals/:id/write - send raw command/input
     if method == "POST" && path.starts_with("/api/terminals/") && path.ends_with("/write") {
         let parts: Vec<&str> = path.split('/').collect();
         if parts.len() == 5 {
@@ -209,6 +237,7 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
         }
     }
 
+    // POST /api/terminals/:id/ask - ask prompt and wait for agent output
     if method == "POST" && path.starts_with("/api/terminals/") && path.ends_with("/ask") {
         let parts: Vec<&str> = path.split('/').collect();
         if parts.len() == 5 {
@@ -229,7 +258,7 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
                 let timeout_secs = json_body
                     .get("timeout_secs")
                     .and_then(|v| v.as_u64())
-                    .unwrap_or(20);
+                    .unwrap_or(25);
                 if !prompt.is_empty() {
                     match pm.ask_session(id, prompt, timeout_secs).await {
                         Ok(resp) => {
@@ -251,6 +280,7 @@ async fn handle_request(raw_req: &str, pm: &PtyManager) -> String {
         }
     }
 
+    // POST /api/broadcast - broadcast message
     if method == "POST" && path == "/api/broadcast" {
         if let Some(json_body) = parse_json_body(body) {
             let text = json_body
@@ -324,9 +354,9 @@ fn build_response(status_code: u16, status_text: &str, json_payload: &serde_json
         "HTTP/1.1 {} {}\r\n\
          Content-Type: application/json; charset=utf-8\r\n\
          Content-Length: {}\r\n\
-         Access-Control-Allow-Origin: *\r\n\
+         Access-Control-Allow-Origin: http://127.0.0.1\r\n\
          Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
-         Access-Control-Allow-Headers: Content-Type\r\n\
+         Access-Control-Allow-Headers: Content-Type, Authorization, X-Mandante-Terminal-ID, X-Mandante-Auth-Token\r\n\
          Connection: close\r\n\
          \r\n\
          {}",
@@ -340,9 +370,9 @@ fn build_response(status_code: u16, status_text: &str, json_payload: &serde_json
 fn build_cors_options_response() -> String {
     format!(
         "HTTP/1.1 204 No Content\r\n\
-         Access-Control-Allow-Origin: *\r\n\
+         Access-Control-Allow-Origin: http://127.0.0.1\r\n\
          Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
-         Access-Control-Allow-Headers: Content-Type\r\n\
+         Access-Control-Allow-Headers: Content-Type, Authorization, X-Mandante-Terminal-ID, X-Mandante-Auth-Token\r\n\
          Connection: close\r\n\
          \r\n"
     )

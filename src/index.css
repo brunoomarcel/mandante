@@ -16,22 +16,56 @@ html, body, #root {
 /* =========================================================
    ESTILOS PERMANENTES DA UI EXTERNA
    ========================================================= */
-/* Melhorar nitidez de texto e ícones SVG */
 body, #root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeSpeed;
+  text-rendering: optimizeLegibility;
 }
 
-/* Evitar turvamento em ícones vetoriais SVG */
 svg {
   shape-rendering: geometricPrecision;
   text-rendering: geometricPrecision;
-  image-rendering: pixelated;
 }
 
+/* =========================================================
+   XTERM & TERMINAL NATIVE LOOK & FEEL
+   ========================================================= */
 .xterm {
-  padding: 8px;
+  padding: 8px 12px !important;
+  height: 100% !important;
+}
+
+.xterm-screen {
+  padding-bottom: 4px;
+}
+
+/* Custom Sleek Scrollbar for xterm Viewport (eliminates ugly Windows scrollbar) */
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 6px !important;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2) !important;
+  border-radius: 9999px !important;
+  transition: background-color 0.2s ease;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45) !important;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Firefox scrollbar */
+.xterm .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.2) transparent;
 }
 
 /* =========================================================
@@ -62,4 +96,3 @@ a[href*="tldraw.com"] {
   opacity: 0 !important;
   pointer-events: none !important;
 }
-

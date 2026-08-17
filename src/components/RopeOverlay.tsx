@@ -139,11 +139,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
   }, [connections, editorRef]);
 
   // ── Real-time note content sync ─────────────────────────────────────────────
-  // The effect above only runs when connections change. This listener also
-  // fires whenever any shape changes (e.g. the user types inside a note),
-  // so the backend always has the latest text.
   useEffect(() => {
-    // Wait for editor to mount
     const trySubscribe = () => {
       const editor = editorRef.current;
       if (!editor) return null;
@@ -172,7 +168,6 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         }
       };
 
-      // tldraw's store.listen fires on every store change
       const unsub = editor.store.listen(
         () => {
           clearTimeout(debounce);
@@ -187,7 +182,6 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
       };
     };
 
-    // Retry until editor is mounted (it may not be ready on first render)
     let cleanup: (() => void) | null = null;
     const interval = setInterval(() => {
       if (editorRef.current) {
@@ -202,7 +196,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
     };
   }, [editorRef]);
 
-  // Listen for external connections update event (e.g. workspace import/delete)
+  // Listen for external connections update event
   useEffect(() => {
     const handleConnectionsUpdated = () => {
       const editor = editorRef.current;
@@ -233,8 +227,9 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
 
   const [, setTick] = useState(0);
 
-  // Track previous page positions to detect movement
+  // Track previous page positions and camera to detect changes efficiently
   const prevPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const prevCamera = useRef<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 1 });
 
   // ── Port helpers ────────────────────────────────────────────────────────────
 
@@ -284,7 +279,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
     return result;
   }, [editorRef, getShapePorts]);
 
-  // ── Animation loop ──────────────────────────────────────────────────────────
+  // ── Animation loop with smart idle detection ────────────────────────────────
 
   useEffect(() => {
     let raf: number;
@@ -322,7 +317,18 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         return;
       }
 
-      // ── 1. Detect terminal movement ──
+      // ── 1. Detect camera pan/zoom change ──
+      const cam = editor.getCamera();
+      const cameraChanged =
+        Math.abs(cam.x - prevCamera.current.x) > 0.1 ||
+        Math.abs(cam.y - prevCamera.current.y) > 0.1 ||
+        Math.abs(cam.z - prevCamera.current.z) > 0.001;
+
+      if (cameraChanged) {
+        prevCamera.current = { x: cam.x, y: cam.y, z: cam.z };
+      }
+
+      // ── 2. Detect terminal movement ──
       const movedIds = new Set<string>();
       for (const s of editor.getCurrentPageShapes()) {
         if (s.type !== "terminal" && s.type !== "note" && s.type !== "sticky_note") continue;
@@ -334,7 +340,9 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         prevPositions.current.set(s.id, { x: shape.x, y: shape.y });
       }
 
-      // ── 2. Update connections (physics decay + retrigger on move + orphan cleanup) ──
+      // ── 3. Update connections (physics decay + retrigger on move + orphan cleanup) ──
+      let hasActiveOscillation = false;
+
       setConnections(prev => {
         let next = prev;
 
@@ -346,12 +354,16 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         if (cleaned.length !== next.length) next = cleaned;
 
         const needsUpdate = next.some(c => !c.settled) || movedIds.size > 0;
-        if (!needsUpdate) return next;
+        if (!needsUpdate) {
+          hasActiveOscillation = false;
+          return next;
+        }
 
         const updated = next.map(c => {
           const terminalMoved = movedIds.has(c.fromShapeId) || movedIds.has(c.toShapeId);
 
           if (terminalMoved) {
+            hasActiveOscillation = true;
             return {
               ...c,
               amplitude: INITIAL_AMPLITUDE,
@@ -364,24 +376,30 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
 
           const amplitude = c.amplitude * DAMPING;
           const phase = c.phase + FREQUENCY;
-          return { ...c, amplitude, phase, settled: amplitude < MIN_AMPLITUDE };
+          const isSettled = amplitude < MIN_AMPLITUDE;
+          if (!isSettled) hasActiveOscillation = true;
+          return { ...c, amplitude, phase, settled: isSettled };
         });
 
         return updated;
       });
 
-      // ── 3. Sync hovered shape from tldraw (no extra DOM layers needed) ──
+      // ── 4. Sync hovered shape from tldraw ──
       const rawHovered = editor.getHoveredShapeId() ?? null;
-      // Only count hover for terminal/note shapes
       const shape = rawHovered ? editor.getShape(rawHovered as any) as any : null;
       const nextHovered = (shape?.type === "terminal" || shape?.type === "note" || shape?.type === "sticky_note") ? rawHovered : null;
+      let hoverChanged = false;
       if (nextHovered !== hoveredShapeIdRef.current) {
         hoveredShapeIdRef.current = nextHovered;
         setHoveredShapeId(nextHovered);
+        hoverChanged = true;
       }
 
-      // ── 4. Force re-render for smooth position tracking ──
-      setTick(t => t + 1);
+      // ── 5. Re-render only when active movement, physics, camera or drag is happening ──
+      if (hasActiveOscillation || movedIds.size > 0 || cameraChanged || dragRef.current || hoverChanged) {
+        setTick(t => t + 1);
+      }
+
       raf = requestAnimationFrame(tick);
     };
 
@@ -449,7 +467,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
     };
   }, [drag, getAllPorts]);
 
-  // ── SVG rope path (Cubic Bezier with tangent-aware control points) ───────────
+  // ── SVG rope path ───────────────────────────────────────────────────────────
 
   const ropeD = (
     x1: number, y1: number, side1: Side,
@@ -481,7 +499,6 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   const allPorts = getAllPorts();
-  // Show ports only for the hovered shape (or all when dragging so the user can drop)
   const ports = drag
     ? allPorts
     : hoveredShapeId
@@ -540,7 +557,7 @@ export const RopeOverlay: React.FC<RopeOverlayProps> = ({ editorRef }) => {
         );
       })()}
 
-      {/* Port dots — 4 sides of each terminal/note, visible only on hover */}
+      {/* Port dots */}
       {ports.map(port => (
         <g
           key={`${port.shapeId}-${port.side}`}

@@ -475,7 +475,7 @@ export const App: React.FC = () => {
                           </span>
                           {ws.cwd && (
                             <span className="text-[9px] text-slate-400 truncate font-mono ml-5">
-                              {ws.cwd.split("/").pop() || ws.cwd}
+                              {ws.cwd.replace(/\\/g, "/").split("/").pop() || ws.cwd}
                             </span>
                           )}
                         </span>

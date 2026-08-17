@@ -8,7 +8,7 @@ pub fn get_mandante_dir() -> PathBuf {
     PathBuf::from(home).join(".mandante")
 }
 
-pub fn ensure_cli_installed(port: u16) {
+pub fn ensure_cli_installed(port: u16, auth_token: &str) {
     let mandante_dir = get_mandante_dir();
     let bin_dir = mandante_dir.join("bin");
     let sessions_dir = mandante_dir.join("sessions");
@@ -16,14 +16,15 @@ pub fn ensure_cli_installed(port: u16) {
     let _ = fs::create_dir_all(&bin_dir);
     let _ = fs::create_dir_all(&sessions_dir);
 
-    // 1. mandante-cli.js (Node.js script)
+    // 1. mandante-cli.js (Node.js script with token auth)
     let node_script_content = format!(
         r#"#!/usr/bin/env node
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = process.env.MANDANTE_PORT || {};
+const PORT = process.env.MANDANTE_PORT || {port};
+const AUTH_TOKEN = process.env.MANDANTE_AUTH_TOKEN || '{auth_token}';
 const CALLER_ID = process.env.MANDANTE_TERMINAL_ID || '';
 const BASE_URL = `http://127.0.0.1:${{PORT}}`;
 
@@ -37,6 +38,8 @@ function request(method, reqPath, body = null) {{
     const headers = {{
       'Content-Type': 'application/json',
       'X-Mandante-Terminal-ID': CALLER_ID,
+      'X-Mandante-Auth-Token': AUTH_TOKEN,
+      'Authorization': `Bearer ${{AUTH_TOKEN}}`,
     }};
     if (payload) {{
       headers['Content-Length'] = Buffer.byteLength(payload);
@@ -120,7 +123,7 @@ Usage:
             if (terminals.length > 0) console.log('');
             console.log('[Connected Notes (Sticky Notes)]');
             notes.forEach((n) => {{
-              const snippet = n.text ? n.text.replace(/\r?\n/g, ' ').substring(0, 80) : '';
+              const snippet = n.text ? n.text.replace(/\\r?\\n/g, ' ').substring(0, 80) : '';
               console.log(`  • ID: [${{n.id}}] | Preview: "${{snippet}}..."`);
             }});
           }}
@@ -151,7 +154,7 @@ Usage:
         console.error('Error: Missing args. Usage: mandante send <terminal_id> "<text>"');
         process.exit(1);
       }}
-      const res = await request('POST', `/api/terminals/${{id}}/write`, {{ text: text + '\r\n' }});
+      const res = await request('POST', `/api/terminals/${{id}}/write`, {{ text: text + '\\r\\n' }});
       if (res.status === 200) {{
         console.log(`Successfully sent input to terminal [${{id}}]`);
       }} else {{
@@ -179,7 +182,7 @@ Usage:
         console.error('Error: Missing message. Usage: mandante broadcast "<message>"');
         process.exit(1);
       }}
-      const res = await request('POST', '/api/broadcast', {{ text: text + '\r\n' }});
+      const res = await request('POST', '/api/broadcast', {{ text: text + '\\r\\n' }});
       if (res.status === 200) {{
         console.log('Successfully broadcasted message to all terminals.');
       }} else {{
@@ -196,7 +199,8 @@ Usage:
 
 main();
 "#,
-        port
+        port = port,
+        auth_token = auth_token
     );
 
     let _ = fs::write(bin_dir.join("mandante-cli.js"), node_script_content);

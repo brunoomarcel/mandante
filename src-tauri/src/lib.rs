@@ -39,10 +39,12 @@ fn close_pty(id: String, state: State<'_, PtyManager>) -> Result<(), String> {
 #[tauri::command]
 fn get_mesh_status(state: State<'_, PtyManager>) -> Result<serde_json::Value, String> {
     let port = state.get_mesh_port();
+    let auth_token = state.get_auth_token();
     let sessions = state.list_sessions();
     Ok(json!({
         "status": "active",
         "mesh_port": port,
+        "auth_token": auth_token,
         "active_terminals_count": sessions.len(),
         "terminals": sessions
     }))
@@ -143,7 +145,8 @@ pub fn run() {
         match MeshServer::start(pty_manager_for_server, 41731).await {
             Ok(server) => {
                 pty_manager_for_cli.set_mesh_port(server.port);
-                cli_generator::ensure_cli_installed(server.port);
+                let auth_token = pty_manager_for_cli.get_auth_token();
+                cli_generator::ensure_cli_installed(server.port, &auth_token);
             }
             Err(e) => eprintln!("[Mandante Mesh Server Error] {}", e),
         }
