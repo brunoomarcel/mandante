@@ -200,6 +200,22 @@ export class TerminalShapeUtil extends BaseBoxShapeUtil<ITerminalShape> {
     );
   }
 
+  override canEdit() {
+    return false;
+  }
+
+  override hideRotateHandle() {
+    return true;
+  }
+
+  override isAspectRatioLocked() {
+    return false;
+  }
+
+  override canResize() {
+    return true;
+  }
+
   override indicator(shape: ITerminalShape) {
     return <rect width={shape.props.w} height={shape.props.h} rx={8} ry={8} />;
   }
@@ -1232,7 +1248,7 @@ export const Canvas = forwardRef<CanvasHandle, CanvasProps>(({ themeMode = "ligh
         }
       `}</style>
       <Tldraw
-        persistenceKey="mandante_spatial_orchestrator_v2"
+        persistenceKey="mandante_spatial_orchestrator_v3"
         embeds={customEmbeds}
         shapeUtils={customShapeUtils}
         onMount={handleMount}
